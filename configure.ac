@@ -4,7 +4,7 @@
 
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT(Gambit,v4.8.9,gambit@iro.umontreal.ca,gambit-v4_8_9)
+AC_INIT(Gambit,v4.9.0,gambit@iro.umontreal.ca,gambit-v4_9_0)
 
 AC_CONFIG_HEADERS(include/config.h)
 
@@ -63,6 +63,8 @@ DEFS_OBJ_DYN_LIB_EXE=""
 COMPILATION_OPTIONS=""
 
 RTLIB_COND_EXPAND_FEATURES=""
+
+userlibdir="~/.gambit_userlib"
 
 ###############################################################################
 #
@@ -2770,6 +2772,8 @@ fi
 
 GAMBITLIB_DEFS="$GAMBITLIB_DEFS -D___GAMBITDIR=\"\\\"`echo \"$prefix\" | sed -e \"s|/|$PATH_SEP|g\"`\\\"\""
 
+GAMBITLIB_DEFS="$GAMBITLIB_DEFS -D___GAMBITDIR_USERLIB=\"\\\"`echo \"$userlibdir\" | sed -e \"s|/|$PATH_SEP|g\"`\\\"\""
+
 if test "$ENABLE_SYMLINKS" != yes; then
 
   if test "$bindir" != "\${prefix}/bin"; then
@@ -3075,7 +3079,7 @@ AC_SUBST(RTLIB_COND_EXPAND_FEATURES)
 
 AC_PROG_MAKE_SET
 
-AC_OUTPUT(makefile include/makefile include/gambit.h lib/makefile $RTLIBMAKEFILES gsi/makefile gsc/makefile bin/makefile bin/gambcomp-C.unix bin/gambcomp-C.bat.windows bin/gambcomp-js.unix bin/gambcomp-js.bat.windows bin/gambcomp-python.unix bin/gambcomp-python.bat.windows bin/gambcomp-ruby.unix bin/gambcomp-ruby.bat.windows bin/gambcomp-php.unix bin/gambcomp-php.bat.windows bin/gambcomp-java.unix bin/gambcomp-java.bat.windows bin/gambdoc.unix bin/gambdoc.bat.windows misc/makefile doc/makefile tests/makefile examples/makefile examples/distr-comp/makefile examples/pi/makefile examples/ring/makefile examples/web-repl/makefile examples/web-server/makefile examples/tcltk/makefile examples/Xlib-simple/makefile examples/pthread/makefile examples/misc/makefile bench/makefile contrib/makefile contrib/GambitREPL/makefile contrib/xactlog/makefile prebuilt/makefile prebuilt/macosx/makefile prebuilt/macosx/build-phase2 prebuilt/windows/makefile prebuilt/windows/build-phase2)
+AC_OUTPUT(makefile include/makefile include/gambit.h lib/makefile $RTLIBMAKEFILES gsi/makefile gsc/makefile bin/makefile bin/gambcomp-C.unix bin/gambcomp-C.bat.windows bin/gambcomp-js.unix bin/gambcomp-js.bat.windows bin/gambcomp-python.unix bin/gambcomp-python.bat.windows bin/gambcomp-ruby.unix bin/gambcomp-ruby.bat.windows bin/gambcomp-php.unix bin/gambcomp-php.bat.windows bin/gambcomp-java.unix bin/gambcomp-java.bat.windows bin/gambdoc.unix bin/gambdoc.bat.windows misc/makefile doc/makefile tests/makefile examples/makefile examples/distr-comp/makefile examples/pi/makefile examples/ring/makefile examples/web-repl/makefile examples/web-server/makefile examples/tcltk/makefile examples/Xlib-simple/makefile examples/pthread/makefile examples/misc/makefile bench/makefile contrib/makefile contrib/GambitREPL/makefile contrib/xactlog/makefile prebuilt/makefile prebuilt/macosx/makefile prebuilt/macosx/build-phase2 prebuilt/windows/makefile prebuilt/windows/build-phase2 githooks/makefile)
 
 if test "$ENABLE_SINGLE_HOST" != yes -a "$C_COMP_LLVM" != yes; then
   AC_MSG_NOTICE([
@@ -3118,6 +3122,20 @@ if test "$ENABLE_SINGLE_HOST" != yes -a "$C_COMP_CLANG" = yes; then
 *** machine with clang 3.0).  Configuring with GNU GCC will give a     ***
 *** faster build (1 min on the same machine with GNU GCC 4.2.1) and    ***
 *** the executable will be faster.                                     ***
+***                                                                    ***
+**************************************************************************
+])
+fi
+
+if echo " $CFLAGS $CXXFLAGS $FLAGS_OPT " | grep -e " -O[[^ ]]*[[23456789]] " > /dev/null; then
+  AC_MSG_NOTICE([
+**************************************************************************
+***                                                                    ***
+*** The setting of CFLAGS, CXXFLAGS and/or the --enable-c-opt is       ***
+*** selecting a C compiler optimization level >= -O2 .  This           ***
+*** typically causes run time performance that is *less* than when     ***
+*** using the default -O1 optimization level.  You may want to try it  ***
+*** both ways and use whichever yields the best performance.           ***
 ***                                                                    ***
 **************************************************************************
 ])

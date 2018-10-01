@@ -8,7 +8,7 @@
  */
 
 #define ___INCLUDED_FROM_SETUP
-#define ___VERSION 408009
+#define ___VERSION 409000
 #include "gambit.h"
 
 #include "os_setup.h"
@@ -1515,16 +1515,18 @@ ___module_struct *module;)
 
   if (lblcount > 0)
     {
-      ___host current_host = 0;
+#ifdef ___SUPPORT_LABEL_VALUES
       void **hlbl_ptr = 0;
+#endif
+      ___host current_host = 0;
       ___SCMOBJ *ofd_alloc;
 
       ofd_alloc = ofdtbl;
 
       for (i=0; i<lblcount; i++)
         {
-          ___label_struct *lbl = &new_lbltbl[i];
-          ___SCMOBJ head = lbl->header;
+          ___SCMOBJ lbl = ___SUBTYPED_FROM_BODY(&new_lbltbl[i].entry_or_descr);
+          ___SCMOBJ head = ___SUBTYPED_HEADER(lbl);
 
           if (___TESTHEADERTAG(head,___sVECTOR))
             {
@@ -1534,11 +1536,10 @@ ___module_struct *module;)
                */
 
               ___UTF_8STRING name =
-                ___CAST(___UTF_8STRING,
-                        ___CAST_FAKEVOIDSTAR_TO_VOIDSTAR(lbl->host_label));
+                ___CAST(___UTF_8STRING, ___LABEL_NAME_GET(lbl));
 
               if (name == 0)
-                lbl->host_label = ___CAST(___FAKEVOIDSTAR,___FAL);
+                ___LABEL_NAME_SET(lbl, ___FAL);
               else
                 {
                   /* TODO: the time needed to create these symbols dynamically dominates the module setup time... optimize by using the local symbol table... this may require changes to the linker */
@@ -1552,7 +1553,7 @@ ___module_struct *module;)
                   if (sym == ___FAL)
                     return ___FIX(___UNKNOWN_ERR);
 
-                  lbl->host_label = ___CAST(___FAKEVOIDSTAR,sym);
+                  ___LABEL_NAME_SET(lbl, sym);
                 }
 
               /*
@@ -1560,13 +1561,16 @@ ___module_struct *module;)
                * (##subprocedure-parent-info proc)
                */
 
-              fixref (module, &lbl->entry_or_descr);
+              fixref (module, ___SUBTYPED_TO(lbl, ___LABEL_INFO));
 
+#ifdef ___SUPPORT_LABEL_VALUES
               if (hlbl_ptr != 0)
                 hlbl_ptr++; /* skip INTRO label */
+#endif
             }
           else
             {
+#ifdef ___SUPPORT_LABEL_VALUES
               if (flags & ___USES_INDIRECT_GOTO)
                 {
                   /*
@@ -1577,15 +1581,17 @@ ___module_struct *module;)
                    * host function.
                    */
 
-                  if (___CAST_FAKEHOST_TO_HOST(lbl->host) != current_host)
+                  if (___LABEL_HOST_GET(lbl) != current_host)
                     {
-                      current_host = ___CAST_FAKEHOST_TO_HOST(lbl->host);
+                      current_host = ___LABEL_HOST_GET(lbl);
                       hlbl_ptr = ___CAST(void**,current_host (0));
                       hlbl_ptr++; /* skip INTRO label */
                     }
 
-                  lbl->host_label = ___CAST_VOIDSTAR_TO_FAKEVOIDSTAR(*hlbl_ptr++);
+                  ___LABEL_HOST_LABEL_SET(lbl,
+                                          ___CAST_VOIDSTAR_TO_FAKEVOIDSTAR(*hlbl_ptr++));
                 }
+#endif
 
               /*
                * Return labels contain a GC map descriptor which has
@@ -1595,12 +1601,11 @@ ___module_struct *module;)
 
               if (head == ___MAKE_HD(0,___sRETURN,___PERM))
                 {
-                  ___SCMOBJ descr;
-                  descr = lbl->entry_or_descr;
+                  ___SCMOBJ descr = ___LABEL_DESCR_GET(lbl);
                   if (___IFD_GCMAP(descr) == 0) /* out-of-line descriptor? */
                     {
                       int fs;
-                      lbl->entry_or_descr = ___CAST(___SCMOBJ,ofd_alloc);
+                      ___LABEL_DESCR_SET(lbl, ___CAST(___SCMOBJ,ofd_alloc));
                       fs = ___OFD_FS(*ofd_alloc);
                       if (___IFD_KIND(descr) == ___RETI)
                         fs = ___RETI_CFS_TO_FS(fs);
@@ -1608,15 +1613,16 @@ ___module_struct *module;)
                     }
                 }
               else
-                lbl->entry_or_descr = ___SUBTYPED_FROM_START(&lbl->header);
+                ___LABEL_ENTRY_SET(lbl, lbl);
 
 #ifdef ___SUPPORT_LOWLEVEL_EXEC
 
-              ___LABEL_LOWLEVEL_TRAMPOLINE_SETUP(&lbl->entry_or_descr);
+              ___LABEL_LOWLEVEL_TRAMPOLINE_SETUP(___SUBTYPED_TO_BODY(lbl));
 
 #endif
             }
         }
+
       *lp = ___SUBTYPED_FROM_BODY(&new_lbltbl[0].entry_or_descr);
     }
 
@@ -2917,7 +2923,7 @@ ___processor_state ___ps;)
 
 ___EXP_FUNC(___SCMOBJ,___call)
    ___P((___PSD
-         int nargs,
+         ___WORD nargs,
          ___SCMOBJ proc,
          ___SCMOBJ stack_marker),
         (___PSV
@@ -2925,7 +2931,7 @@ ___EXP_FUNC(___SCMOBJ,___call)
          proc,
          stack_marker)
 ___PSDKR
-int nargs;
+___WORD nargs;
 ___SCMOBJ proc;
 ___SCMOBJ stack_marker;)
 {
@@ -3059,8 +3065,8 @@ ___processor_state ___ps;)
 #define reg_R3 "edx"
 #define reg_R4 "esi"
 #define reg_PS "ecx"
-#define reg_FP "ebp"
-#define reg_HP "esp"
+#define reg_FP "esp"
+#define reg_HP "ebp"
 #define reg_TMP reg_R1
 #define reg_SP "esp"
 #define PS_FIELD(field) field "*4(%%" reg_PS ")"
@@ -3071,8 +3077,8 @@ ___processor_state ___ps;)
     r2   ebx  CS
     ps   ecx
     r3   edx
-    hp   esp  CS  stack pointer
-    sp   ebp  CS  optionally used as frame pointer
+    sp   esp  CS  stack pointer
+    hp   ebp  CS  optionally used as frame pointer
     r4   esi  CS
     r0   edi  CS
   */
@@ -3087,8 +3093,8 @@ ___processor_state ___ps;)
 #define reg_R3 "rdx"
 #define reg_R4 "rsi"
 #define reg_PS "rcx"
-#define reg_FP "rbp"
-#define reg_HP "rsp"
+#define reg_FP "rsp"
+#define reg_HP "rbp"
 #define reg_TMP reg_R1
 #define reg_SP "rsp"
 #define PS_FIELD(field) field "*8(%%" reg_PS ")"
@@ -3099,8 +3105,8 @@ ___processor_state ___ps;)
     r2   rbx  CS
     ps   rcx      argument 4 to functions
     r3   rdx      argument 3 to functions; return value 2
-    hp   rsp  CS  stack pointer
-    sp   rbp  CS  optionally used as frame pointer
+    sp   rsp  CS  stack pointer
+    hp   rbp  CS  optionally used as frame pointer
     r4   rsi      argument 2 to functions
     r0   rdi      argument 1 to functions
          r8       argument 5 to functions
@@ -3140,8 +3146,8 @@ ___processor_state ___ps;)
     "push %%" reg_R2 "\n\t"
     "push %%" reg_R3 "\n\t"
     "push %%" reg_R4 "\n\t"
-    "push %%" reg_PS "\n\t"
-    "push %%" reg_FP "\n\t"
+    /* "push %%" reg_PS "\n\t" */
+    /* "push %%" reg_FP "\n\t" */
     "push %%" reg_HP "\n\t"
 
     /* setup handler for returning from lowlevel code */
@@ -3155,18 +3161,40 @@ ___processor_state ___ps;)
     "mov  %%" reg_TMP ", " PS_FIELD("-1") "\n\t"
     "mov  %%" reg_SP ", " PS_FIELD("-2") "\n\t"
 
+    /* setup frame pointer and heap pointer registers */
+
+    "mov  " PS_FP ", %%" reg_FP "\n\t"
+    "mov  " PS_HP ", %%" reg_HP "\n\t"
+
+    /* setup self register */
+
+    "mov  " PS_R("4") ", %%" reg_R4 "\n\t"
+
+    "mov  " PS_PC ", %%" reg_TMP "\n\t"
+#ifdef ___CPU_x86_32
+    "cmpl $1048576,-1-2*4(%%" reg_TMP ")\n\t"
+    "jl   setup_other_registers\n\t"
+    "add  $5, %%" reg_R4 "\n\t"
+    "push %%" reg_R4 "\n\t"
+    "add  $-5, %%" reg_R4 "\n\t"
+#endif
+#ifdef ___CPU_x86_64
+    "cmpl $1048576,-1-2*8(%%" reg_TMP ")\n\t"
+    "jl   setup_other_registers\n\t"
+    "add  $3, %%" reg_R4 "\n\t"
+    "push %%" reg_R4 "\n\t"
+    "add  $-3, %%" reg_R4 "\n\t"
+#endif
+
+    "\n"
+    "setup_other_registers:\n\t"
+
     /* setup lowlevel registers from ___ps->r[...] */
 
     "mov  " PS_R("0") ", %%" reg_R0 "\n\t"
     "mov  " PS_R("1") ", %%" reg_R1 "\n\t"
     "mov  " PS_R("2") ", %%" reg_R2 "\n\t"
     "mov  " PS_R("3") ", %%" reg_R3 "\n\t"
-    "mov  " PS_R("4") ", %%" reg_R4 "\n\t"
-
-    /* setup frame pointer and heap pointer registers */
-
-    "mov  " PS_FP ", %%" reg_FP "\n\t"
-    /* "mov  " PS_HP ", %%" reg_HP "\n\t" */
 
     /*
      * set flags according to ___ps->na and jump to lowlevel code at
@@ -3174,45 +3202,51 @@ ___processor_state ___ps;)
      */
 
     "cmpl $0, " PS_NA "\n\t"
-    "je   na_0\n\t"
+    "je   nargs_0\n\t"
     "cmpl $1, " PS_NA "\n\t"
-    "je   na_1\n\t"
+    "je   nargs_1\n\t"
     "cmpl $2, " PS_NA "\n\t"
-    "je   na_2\n\t"
+    "je   nargs_2\n\t"
     "cmpl $3, " PS_NA "\n\t"
-    "je   na_3\n\t"
+    "je   nargs_3\n\t"
+    "cmpl $4, " PS_NA "\n\t"
+    "je   nargs_4\n\t"
 
     "\n"
-    "na_above_3:\n\t"
-    /* set flags so that these jumps succeed: jno jne jns jp  */
-    "cmp  $-67, %%cl\n\t"
-    "jmp  *" PS_PC "\n\t"
-
-    "\n"
-    "na_0:\n\t"
-    /* set flags so that these jumps succeed: jno je  jns jp  */
-    "cmp  %%cl, %%cl\n\t"
-    "jmp  *" PS_PC "\n\t"
-
-    "\n"
-    "na_1:\n\t"
-    /* set flags so that these jumps succeed: jo  jne jns jp  */
-    "cmp  $66, %%cl\n\t"
-    "jmp  *" PS_PC "\n\t"
-
-    "\n"
-    "na_2:\n\t"
-    /* set flags so that these jumps succeed: jno jne js  jp  */
+    "nargs_in_ps_na:\n\t"
+    /* set flags so these jumps succeed: jae jne jle jno jp  ja  jl  js */
     "cmp  $0, %%cl\n\t"
     "jmp  *" PS_PC "\n\t"
 
     "\n"
-    "na_3:\n\t"
-    /* set flags so that these jumps succeed: jno jne jns jnp */
-    "cmp  $-65, %%cl\n\t"
+    "nargs_0:\n\t"
+    /* set flags so these jumps succeed: jb  jne jle jno jp  jbe jl  js */
+    "cmp  $-3, %%cl\n\t"
     "jmp  *" PS_PC "\n\t"
 
-    /* handler for returning from lowlevel code */
+    "\n"
+    "nargs_1:\n\t"
+    /* set flags so these jumps succeed: jae je  jle jno jp  jbe jge jns */
+    "cmp  %%cl, %%cl\n\t"
+    "jmp  *" PS_PC "\n\t"
+
+    "\n"
+    "nargs_2:\n\t"
+    /* set flags so these jumps succeed: jae jne jg  jno jp  ja  jge jns */
+    "cmp  $-123, %%cl\n\t"
+    "jmp  *" PS_PC "\n\t"
+
+    "\n"
+    "nargs_3:\n\t"
+    /* set flags so these jumps succeed: jae jne jle jo  jp  ja  jl  jns */
+    "cmp  $10, %%cl\n\t"
+    "jmp  *" PS_PC "\n\t"
+
+    "\n"
+    "nargs_4:\n\t"
+    /* set flags so these jumps succeed: jae jne jle jno jnp ja  jl  js */
+    "cmp  $2, %%cl\n\t"
+    "jmp  *" PS_PC "\n\t"
 
     "\n"
     "return_from_lowlevel:"
@@ -3220,26 +3254,31 @@ ___processor_state ___ps;)
 
     /* recover ___ps->na from flags */
 
-    "jne  na_not_0\n\t"
+    "jae  nargs_not_0\n\t"
     "movl $0, " PS_NA "\n\t"
-    "jmp  na_done\n"
-    "na_not_0:\n\t"
+    "jmp  nargs_done\n"
+    "nargs_not_0:\n\t"
 
-    "jno  na_not_0_or_1\n\t"
+    "jne  nargs_not_0_or_1\n\t"
     "movl $1, " PS_NA "\n\t"
-    "jmp  na_done\n"
-    "na_not_0_or_1:\n\t"
+    "jmp  nargs_done\n"
+    "nargs_not_0_or_1:\n\t"
 
-    "jns  na_not_0_or_1_or_2\n\t"
+    "jle  nargs_not_0_or_1_or_2\n\t"
     "movl $2, " PS_NA "\n\t"
-    "jmp  na_done\n"
-    "na_not_0_or_1_or_2:\n\t"
+    "jmp  nargs_done\n"
+    "nargs_not_0_or_1_or_2:\n\t"
 
-    "jp   na_done\n\t"
+    "jno  nargs_not_0_or_1_or_2_or_3\n\t"
     "movl $3, " PS_NA "\n\t"
+    "jmp  nargs_done\n"
+    "nargs_not_0_or_1_or_2_or_3:\n\t"
+
+    "jp   nargs_done\n\t"
+    "movl $4, " PS_NA "\n\t"
 
     "\n"
-    "na_done:\n\t"
+    "nargs_done:\n\t"
 
     /* save lowlevel registers to ___ps->r[...] */
 
@@ -3247,12 +3286,6 @@ ___processor_state ___ps;)
     "mov  %%" reg_R1 ", " PS_R("1") "\n\t"
     "mov  %%" reg_R2 ", " PS_R("2") "\n\t"
     "mov  %%" reg_R3 ", " PS_R("3") "\n\t"
-    "mov  %%" reg_R4 ", " PS_R("4") "\n\t"
-
-    /* save frame pointer and heap pointer registers */
-
-    "mov  %%" reg_FP ", " PS_FP "\n\t"
-    /* "mov  %%" reg_HP ", " PS_HP "\n\t" */
 
     /* recover the destination control point in ___ps->pc */
 
@@ -3260,14 +3293,34 @@ ___processor_state ___ps;)
     "add  $-3, %%" reg_TMP "\n\t"
     "mov  %%" reg_TMP ", " PS_PC "\n\t"
 
-    /* TODO: pop self register when control point is for a closure */
+#ifdef ___CPU_x86_32
+    "cmpl $1048576,-1-2*4(%%" reg_TMP ")\n\t"
+    "jl   store_self_register\n\t"
+    "pop  %%" reg_R4 "\n\t"
+    "add  $-3, %%" reg_R4 "\n\t"
+#endif
+#ifdef ___CPU_x86_64
+    "cmpl $1048576,-1-2*8(%%" reg_TMP ")\n\t"
+    "jl   store_self_register\n\t"
+    "pop  %%" reg_R4 "\n\t"
+    "add  $-6, %%" reg_R4 "\n\t"
+#endif
+
+    "\n"
+    "store_self_register:\n\t"
+    "mov  %%" reg_R4 ", " PS_R("4") "\n\t"
+
+    /* save frame pointer and heap pointer registers */
+
+    "mov  %%" reg_FP ", " PS_FP "\n\t"
+    "mov  %%" reg_HP ", " PS_HP "\n\t"
 
     /* restore callee-save registers */
 
     "mov  " PS_FIELD("-2") ", %%" reg_SP "\n\t"
     "pop  %%" reg_HP "\n\t"
-    "pop  %%" reg_FP "\n\t"
-    "pop  %%" reg_PS "\n\t"
+    /* "pop  %%" reg_FP "\n\t" */
+    /* "pop  %%" reg_PS "\n\t" */
     "pop  %%" reg_R4 "\n\t"
     "pop  %%" reg_R3 "\n\t"
     "pop  %%" reg_R2 "\n\t"
@@ -3299,6 +3352,262 @@ ___processor_state ___ps;)
 
 
 #endif
+
+
+___SCMOBJ ___machine_code_block_fixup
+   ___P((___processor_state ___ps,
+         void *mcb,
+         ___SCMOBJ fixup_locs,
+         ___SCMOBJ fixup_objs),
+        (___ps,
+         mcb,
+         fixup_locs,
+         fixup_objs)
+___processor_state ___ps;
+void *mcb;
+___SCMOBJ fixup_locs;
+___SCMOBJ fixup_objs;)
+{
+#ifdef ___SUPPORT_LOWLEVEL_EXEC
+
+  ___WORD code = ___CAST(___WORD,mcb);
+  ___U8 *ptr = ___CAST(___U8*,___BODY_AS(fixup_locs,___tSUBTYPED));
+  ___WORD pos = 0;
+  ___U8 loc;
+  ___WORD val = ___FAL;
+
+  while ((loc = *ptr++) != 0)
+    {
+      if (loc == 1)
+        pos += 127;
+      else
+        {
+          ___WORD fixup_pos = pos + (loc>>1) - 1;
+          ___WORD x = (loc&1)
+                      ? *___CAST(___WORD*,code+fixup_pos)
+                      : *___CAST(___S32*,code+fixup_pos);
+          int op = x & 0xff;
+          ___WORD arg = x >> 8;
+
+          switch (op)
+            {
+            case 0:
+              val = arg;
+              break;
+
+            case 1:
+              val = code + fixup_pos + arg;
+              break;
+
+            case 2:
+              val = ___VECTORREF(fixup_objs, ___FIX(arg));
+              break;
+
+            case 3:
+              val = ___VECTORREF(fixup_objs, ___FIX(arg));
+              val = ___make_global_var (val);
+              val = ___CAST(___WORD, &___GLOBALVARREF(val));
+              break;
+
+            case 4:
+              val = ___VECTORREF(fixup_objs, ___FIX(arg));
+              val = ___make_global_var (val);
+              val = ___CAST(___WORD, &___GLOBALVARPRIMREF(val));
+              break;
+
+            case 5:
+              switch (arg)
+                {
+                case 0:
+                  val = ___CAST(___WORD, ___lowlevel_exec);
+                  break;
+                }
+              break;
+            }
+
+          if (loc&1)
+            {
+              *___CAST(___WORD*,code+fixup_pos) = val;
+              pos = fixup_pos + sizeof(___WORD);
+            }
+          else
+            {
+              *___CAST(___S32*,code+fixup_pos) = val;
+              pos = fixup_pos + sizeof(___S32);
+            }
+        }
+    }
+
+  return val;
+
+#else
+
+  return ___FAL;
+
+#endif
+}
+
+
+/*
+ * In the following functions, proc points to a label structure
+ * (___label_struct) that was either created by the C backend or the
+ * CPU backend.  If the host field of the label structure is equal to
+ * ___lowlevel_exec then it was created by the CPU backend and the
+ * word just before the host field is a pointer to the parent intro
+ * structure.
+ */
+
+#define ___LOWLEVEL_LABEL(lbl) \
+(___LABEL_HOST_GET(lbl) == ___lowlevel_exec)
+
+#define ___LOWLEVEL_LABEL_PARENT_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_HOST-1)
+#define ___LOWLEVEL_LABEL_NEXT_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_HOST-2)
+#define ___LOWLEVEL_LABEL_NBLBLS_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_HOST-3)
+#define ___LOWLEVEL_LABEL_INFO_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_HOST-4)
+#define ___LOWLEVEL_LABEL_NAME_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_HOST-5)
+
+
+___HIDDEN ___SCMOBJ ___subprocedure_parent_intro
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+  ___SCMOBJ probe = proc;
+
+  do
+    {
+      probe -= ___LABEL_SIZE * ___WS;
+    } while (!___TESTSUBTYPETAG(probe, ___sVECTOR));
+
+  return probe;
+}
+
+
+___SCMOBJ ___make_subprocedure
+   ___P((___SCMOBJ proc,
+         ___SCMOBJ id),
+        (proc,
+         id)
+___SCMOBJ proc;
+___SCMOBJ id;)
+{
+#ifdef ___SUPPORT_LOWLEVEL_EXEC
+
+  if (___LOWLEVEL_LABEL(proc))
+    {
+      ___SCMOBJ probe = ___LOWLEVEL_LABEL_PARENT_GET(proc);
+
+      if (___FIXLT(id, ___FIX(0)) ||
+          ___FIXGE(id, ___LOWLEVEL_LABEL_NBLBLS_GET(probe)))
+        return ___FAL;
+
+      while (___FIXGT(id, ___FIX(0)))
+        {
+          probe = ___LOWLEVEL_LABEL_NEXT_GET(probe);
+          id = ___FIXSUB(id, ___FIX(1));
+        }
+
+      return probe;
+    }
+
+#endif
+
+  {
+    ___SCMOBJ intro = ___subprocedure_parent_intro (proc);
+
+    if (___FIXLT(id, ___FIX(0)) ||
+        ___FIXGE(id, ___FIX(___HD_FIELDS(___SUBTYPED_HEADER(intro)))))
+      return ___FAL;
+
+    return intro + (___INT(id)+1) * ___LABEL_SIZE * ___WS;
+  }
+}
+
+
+___SCMOBJ ___subprocedure_id
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+#ifdef ___SUPPORT_LOWLEVEL_EXEC
+
+  if (___LOWLEVEL_LABEL(proc))
+    {
+      ___SCMOBJ probe = ___LOWLEVEL_LABEL_PARENT_GET(proc);
+      ___SCMOBJ id = ___FIX(0);
+
+      while (!___EQP(proc, probe))
+        {
+          probe = ___LOWLEVEL_LABEL_NEXT_GET(probe);
+          id = ___FIXADD(id, ___FIX(1));
+        }
+
+      return id;
+    }
+
+#endif
+
+  return ___FIX((proc - ___subprocedure_parent_intro (proc)) / (___LABEL_SIZE * ___WS) - 1);
+}
+
+
+___SCMOBJ ___subprocedure_parent
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+  return ___make_subprocedure (proc, ___FIX(0));
+}
+
+
+___SCMOBJ ___subprocedure_parent_info
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+#ifdef ___SUPPORT_LOWLEVEL_EXEC
+
+  if (___LOWLEVEL_LABEL(proc))
+    return ___LOWLEVEL_LABEL_INFO_GET(___LOWLEVEL_LABEL_PARENT_GET(proc));
+
+#endif
+
+  return ___LABEL_INFO_GET(___subprocedure_parent_intro (proc));
+}
+
+
+___SCMOBJ ___subprocedure_parent_name
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+#ifdef ___SUPPORT_LOWLEVEL_EXEC
+
+  if (___LOWLEVEL_LABEL(proc))
+    return ___LOWLEVEL_LABEL_NAME_GET(___LOWLEVEL_LABEL_PARENT_GET(proc));
+
+#endif
+
+  return ___LABEL_NAME_GET(___subprocedure_parent_intro (proc));
+}
+
+
+___SCMOBJ ___subprocedure_nb_parameters
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+   return ___FIX(___PRD_NBPARMS(___SUBTYPED_HEADER(proc)));
+}
+
+
+___SCMOBJ ___subprocedure_nb_closed
+   ___P((___SCMOBJ proc),
+        (proc)
+___SCMOBJ proc;)
+{
+  return ___FIX(___PRD_NBCLOSED(___SUBTYPED_HEADER(proc)));
+}
 
 
 #ifdef ___USE_print_source_location
@@ -3611,6 +3920,26 @@ ___virtual_machine_state ___vms;)
 
   for (i=0; i<___NB_GVM_REGS; i++)
     ___ps->r[i] = ___VOID;
+
+  /*
+   * Copy handlers from global state to processor state.
+   */
+
+  ___ps->handler_sfun_conv_error = ___GSTATE->handler_sfun_conv_error;
+  ___ps->handler_cfun_conv_error = ___GSTATE->handler_cfun_conv_error;
+  ___ps->handler_stack_limit     = ___GSTATE->handler_stack_limit;
+  ___ps->handler_heap_limit      = ___GSTATE->handler_heap_limit;
+  ___ps->handler_not_proc        = ___GSTATE->handler_not_proc;
+  ___ps->handler_not_proc_glo    = ___GSTATE->handler_not_proc_glo;
+  ___ps->handler_wrong_nargs     = ___GSTATE->handler_wrong_nargs;
+  ___ps->handler_get_rest        = ___GSTATE->handler_get_rest;
+  ___ps->handler_get_key         = ___GSTATE->handler_get_key;
+  ___ps->handler_get_key_rest    = ___GSTATE->handler_get_key_rest;
+  ___ps->handler_force           = ___GSTATE->handler_force;
+  ___ps->handler_return_to_c     = ___GSTATE->handler_return_to_c;
+  ___ps->handler_break           = ___GSTATE->handler_break;
+  ___ps->internal_return         = ___GSTATE->internal_return;
+  ___ps->dynamic_env_bind_return = ___GSTATE->dynamic_env_bind_return;
 
   /*
    * Setup exception handling.
@@ -4721,6 +5050,9 @@ ___HIDDEN void setup_dynamic_linking ___PVOID
     = ___lowlevel_exec;
 
 #endif
+
+  ___GSTATE->___machine_code_block_fixup
+    = ___machine_code_block_fixup;
 
   ___GSTATE->___throw_error
     = ___throw_error;

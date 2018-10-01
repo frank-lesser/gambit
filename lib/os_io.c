@@ -8,7 +8,7 @@
  */
 
 #define ___INCLUDED_FROM_OS_IO
-#define ___VERSION 408009
+#define ___VERSION 409000
 #include "gambit.h"
 
 #include "os_setup.h"
@@ -3971,6 +3971,7 @@ ___SCMOBJ client_ca_path;)
 #ifndef OPENSSL_NO_DH
 
   DH *dh;
+  BIGNUM *bp, *bg;
 
 #endif
 
@@ -3996,11 +3997,17 @@ ___SCMOBJ client_ca_path;)
      https://github.com/lighttpd/lighttpd1.4/blob/master/src/network.c */
   if (openssl_initialized == 0)
     {
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+      if (!OPENSSL_init_ssl(0, NULL))
+        return ___FIX(___TLS_LIBRARY_INIT_ERR);
+#else
       if (!SSL_library_init())
         return ___FIX(___TLS_LIBRARY_INIT_ERR);
 
       SSL_load_error_strings();
       OpenSSL_add_all_algorithms();
+#endif
+
 
       /* OpenSSL version format after 0.9.3:
          MMNNFFPPS: major minor fix patch status
@@ -4100,7 +4107,7 @@ ___SCMOBJ client_ca_path;)
         | SSL_OP_NO_COMPRESSION;
 
       c->tls_ctx = SSL_CTX_new (SSLv23_server_method());
-      OPENSSL_CHECK_ERROR (c->tls_ctx);
+      OPENSSL_CHECK_ERROR (___CAST(___UWORD,c->tls_ctx));
 
       /* Required identifier for client certificate verification to work with sessions */
       OPENSSL_CHECK_ERROR (SSL_CTX_set_session_id_context
@@ -4143,10 +4150,12 @@ ___SCMOBJ client_ca_path;)
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv3)));
         case 0x300:
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
           OPENSSL_CHECK_ERROR ((SSL_OP_NO_SSLv2 &
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv2)));
         case 0x200:
+#endif
           break;
         default:
           return ___FIX(___TLS_WRONG_TLS_VERSION_ERR);
@@ -4191,16 +4200,23 @@ ___SCMOBJ client_ca_path;)
                   ___release_rc_tls_context (c);
                   return ___FIX(___TLS_DH_PARAMS_ERR);
                 }
-              dh->p = BN_bin2bn (dh1024_p, sizeof(dh1024_p), NULL);
-              dh->g = BN_bin2bn (dh1024_g, sizeof(dh1024_g), NULL);
-              dh->length = 160;
-              if (dh->p == NULL || dh->g == NULL)
+              bp = BN_bin2bn (dh1024_p, sizeof(dh1024_p), NULL);
+              bg = BN_bin2bn (dh1024_g, sizeof(dh1024_g), NULL);
+              if (dh1024_p == NULL || dh1024_g == NULL)
                 {
+                  BN_free(bp);
+                  BN_free(bg);
                   DH_free (dh);
                   ___release_rc_tls_context (c);
                   return ___FIX(___TLS_DH_PARAMS_ERR);
                 }
             }
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+          DH_set0_pqg(dh,bp,NULL,bg);
+#else
+          dh->p=bp;
+          dh->g=bg;
+#endif
           SSL_CTX_set_tmp_dh (c->tls_ctx, dh);
           OPENSSL_CHECK_ERROR (SSL_OP_SINGLE_DH_USE &
                                SSL_CTX_set_options (c->tls_ctx,
@@ -4324,7 +4340,7 @@ ___SCMOBJ client_ca_path;)
         SSL_OP_NO_COMPRESSION;
 
       c->tls_ctx = SSL_CTX_new (SSLv23_client_method());
-      OPENSSL_CHECK_ERROR (c->tls_ctx);
+      OPENSSL_CHECK_ERROR (___CAST(___UWORD,c->tls_ctx));
 
       /* Required identifier for client certificate verification to work with
          sessions. */
@@ -4369,10 +4385,12 @@ ___SCMOBJ client_ca_path;)
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv3)));
         case 0x300:
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
           OPENSSL_CHECK_ERROR ((SSL_OP_NO_SSLv2 &
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv2)));
         case 0x200:
+#endif
           break;
         default:
           ___release_rc_tls_context (c);
@@ -11214,81 +11232,6 @@ ___SCMOBJ timeout;)
  * Decoding and encoding of a buffer of Scheme characters to a buffer
  * of bytes.
  */
-
-/*
- * The following definitions must match the structure of ports defined
- * in _io#.scm .
- */
-
-#define ___PORT_MUTEX                1
-#define ___PORT_RKIND                2
-#define ___PORT_WKIND                3
-#define ___PORT_NAME                 4
-#define ___PORT_WAIT                 5
-#define ___PORT_CLOSE                6
-#define ___PORT_ROPTIONS             7
-#define ___PORT_RTIMEOUT             8
-#define ___PORT_RTIMEOUT_THUNK       9
-#define ___PORT_SET_RTIMEOUT         10
-#define ___PORT_WOPTIONS             11
-#define ___PORT_WTIMEOUT             12
-#define ___PORT_WTIMEOUT_THUNK       13
-#define ___PORT_SET_WTIMEOUT         14
-#define ___PORT_IO_EXCEPTION_HANDLER 15
-
-#define ___PORT_OBJECT_READ_DATUM    16
-#define ___PORT_OBJECT_WRITE_DATUM   17
-#define ___PORT_OBJECT_NEWLINE       18
-#define ___PORT_OBJECT_FORCE_OUTPUT  19
-
-#define ___PORT_OBJECT_OTHER1        20
-#define ___PORT_OBJECT_OTHER2        21
-#define ___PORT_OBJECT_OTHER3        22
-
-#define ___PORT_CHAR_RBUF            20
-#define ___PORT_CHAR_RLO             21
-#define ___PORT_CHAR_RHI             22
-#define ___PORT_CHAR_RCHARS          23
-#define ___PORT_CHAR_RLINES          24
-#define ___PORT_CHAR_RCURLINE        25
-#define ___PORT_CHAR_RBUF_FILL       26
-#define ___PORT_CHAR_PEEK_EOFP       27
-
-#define ___PORT_CHAR_WBUF            28
-#define ___PORT_CHAR_WLO             29
-#define ___PORT_CHAR_WHI             30
-#define ___PORT_CHAR_WCHARS          31
-#define ___PORT_CHAR_WLINES          32
-#define ___PORT_CHAR_WCURLINE        33
-#define ___PORT_CHAR_WBUF_DRAIN      34
-#define ___PORT_INPUT_READTABLE      35
-#define ___PORT_OUTPUT_READTABLE     36
-#define ___PORT_OUTPUT_WIDTH         37
-
-#define ___PORT_CHAR_OTHER1          38
-#define ___PORT_CHAR_OTHER2          39
-#define ___PORT_CHAR_OTHER3          40
-#define ___PORT_CHAR_OTHER4          41
-#define ___PORT_CHAR_OTHER5          42
-
-#define ___PORT_BYTE_RBUF            38
-#define ___PORT_BYTE_RLO             39
-#define ___PORT_BYTE_RHI             40
-#define ___PORT_BYTE_RBUF_FILL       41
-
-#define ___PORT_BYTE_WBUF            42
-#define ___PORT_BYTE_WLO             43
-#define ___PORT_BYTE_WHI             44
-#define ___PORT_BYTE_WBUF_DRAIN      45
-
-#define ___PORT_BYTE_OTHER1          46
-#define ___PORT_BYTE_OTHER2          47
-
-#define ___PORT_RDEVICE_CONDVAR      46
-#define ___PORT_WDEVICE_CONDVAR      47
-
-#define ___PORT_DEVICE_OTHER1        48
-#define ___PORT_DEVICE_OTHER2        49
 
 #define ___C ___CS_SELECT(___U8,___U16,___U32)
 

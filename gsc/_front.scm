@@ -219,7 +219,11 @@
          (root
           (if output-filename
               (path-strip-extension output-filename)
-              (path-strip-directory (path-strip-extension input))))
+              (let ((filename
+                     (if (##source? input)
+                         (##source-path input)
+                         input)))
+                (path-strip-directory (path-strip-extension filename)))))
          (output
           (if output-filename
               output-filename
@@ -249,7 +253,10 @@
                ptrees))
             ptrees)))
 
-    (let* ((v1 (read-source input #f #t))
+    (let* ((v1
+            (if (##source? input)
+                (vector #f (##sourcify-deep input input))
+                (read-source input #f #t)))
            (script-line (vector-ref v1 0))
            (expr (vector-ref v1 1))
            (program (expand-source (wrap-program expr)))
@@ -279,7 +286,7 @@
               (table-set! comp-scope 'linker-name)
               (or link-name
                   module-name)))
-           (result
+           (result-thunk
             (inner parsed-program
                    env
                    root
@@ -295,7 +302,8 @@
       (ptree.end!)
       (env.end!)
 
-      result)))
+      (and result-thunk
+           (result-thunk)))))
 
 (define (compile-program
          input
@@ -307,7 +315,7 @@
 
   (set! warnings-requested? compiler-option-warnings)
 
-  (let ((result
+  (let ((result-thunk
          (with-exception-handling
           (lambda ()
             (compile-program-frontend
@@ -385,19 +393,21 @@
                        (close-output-port dg-port)
                        (set! dependency-graph #f)))
 
-                 (target.dump
-                  module-procs
-                  output
-                  c-intf
-                  module-descr
-                  linker-name)
+                 (let ((result-thunk
+                        (target.dump
+                         module-procs
+                         output
+                         c-intf
+                         module-descr
+                         linker-name)))
 
-                 (dump-c-intf module-procs root c-intf)
+                   (if result-thunk
+                       (dump-c-intf module-procs root c-intf))
 
-                 output)))))))
+                   result-thunk))))))))
 
     (if info-port
-        (if result
+        (if result-thunk
             (begin
               (display "Compilation finished." info-port)
               (newline info-port))
@@ -405,7 +415,7 @@
               (display "Compilation terminated abnormally." info-port)
               (newline info-port))))
 
-    result))
+    result-thunk))
 
 (define (expand-program input . rest)
   (let ((opts #f)
@@ -422,27 +432,32 @@
 
     (set! warnings-requested? compiler-option-warnings)
 
-    (with-exception-handling
-     (lambda ()
-       (compile-program-frontend
-        input
-        opts
-        #f
-        #f
-        #f
-        #f
-        (lambda (parsed-program
-                 env
-                 root
-                 output
-                 module-name
-                 linker-name
-                 c-intf
-                 comp-scope
-                 script-line)
-          (map (lambda (x)
-                 (parse-tree->expression x loc-table))
-               parsed-program)))))))
+    (let ((result-thunk
+           (with-exception-handling
+            (lambda ()
+              (compile-program-frontend
+               input
+               opts
+               #f
+               #f
+               #f
+               #f
+               (lambda (parsed-program
+                        env
+                        root
+                        output
+                        module-name
+                        linker-name
+                        c-intf
+                        comp-scope
+                        script-line)
+                 (let ((result
+                        (map (lambda (x)
+                               (parse-tree->expression x loc-table))
+                             parsed-program)))
+                   (lambda () result))))))))
+      (and result-thunk
+           (result-thunk)))))
 
 (define (dump-c-intf module-procs root c-intf)
   (let ((decls (c-intf-decls c-intf))
@@ -1114,7 +1129,7 @@
           (merge-contexts-and-seal-bb
            p-context
            ret-var-set
-           (intrs-enabled? (node-env val))
+           val
            'internal
            (node->comment val))
 
@@ -1814,7 +1829,7 @@
                      ret-var-set
                      (node->comment node))
            (let ((ret-opnd (var->opnd ret-var)))
-             (seal-bb (intrs-enabled? (node-env node)) 'return)
+             (seal-bb node 'return)
              (shrink-slots 0)
              (emit-instr!
               (make-jump ret-opnd
@@ -2303,7 +2318,7 @@
 (define (join-execution-paths-aux node live context1 bb1 context2 bb2)
   (restore-context context2)
   (set! *bb* bb2)
-  (seal-bb (intrs-enabled? (node-env node)) 'internal)
+  (seal-bb node 'internal)
   (let ((join-lbl (bbs-new-lbl! *bbs*)))
     (emit-instr!
      (make-jump (make-lbl join-lbl)
@@ -2319,7 +2334,7 @@
       (merge-contexts-and-seal-bb
        context2*
        live
-       (intrs-enabled? (node-env node))
+       node
        'internal
        (node->comment node))
       (emit-instr!
@@ -2661,7 +2676,7 @@
                                     live
                                     (node->comment node))
 
-                      (seal-bb (intrs-enabled? (node-env node)) 'internal)
+                      (seal-bb node 'internal)
 
                       (emit-instr!
                        (make-jump (make-lbl join-lbl)
@@ -2714,7 +2729,7 @@
 ;; context (i.e. reg and stack values and frame size) to 'other-context' only
 ;; considering the variables in 'live'.
 
-(define (merge-contexts-and-seal-bb other-context live poll? where comment)
+(define (merge-contexts-and-seal-bb other-context live node where comment)
 ;(display "*************")(newline);*************
 ;(display "1 regs  : ")(pp (map (lambda (x) (if (var? x) (var-name x) x)) regs))
 ;(display "1 slots : ")(pp (map (lambda (x) (if (var? x) (var-name x) x)) slots))
@@ -2801,7 +2816,7 @@
             (put-var (make-stk i) empty-var))
           (loop4 (+ i 1)))))
 
-    (seal-bb poll? where)
+    (seal-bb node where)
 
     (set! poll (poll-merge poll other-poll))
 
@@ -2812,7 +2827,7 @@
       (compiler-internal-error
         "merge-contexts-and-seal-bb, entry-bb's do not agree"))))
 
-(define (seal-bb poll? where)
+(define (seal-bb node where)
 
   (define (poll-at split-point)
     (let loop ((i 0)
@@ -2881,19 +2896,22 @@
           (poll-at (max (- poll-period delta) 0))
           (impose-polling-constraints)))))
 
-  (if poll? (impose-polling-constraints))
+  (if (intrs-enabled? (node-env node))
+      (impose-polling-constraints))
 
   (let* ((n (+ (length (bb-non-branch-instrs *bb*)) 1))
          (delta (+ (poll-delta poll) n))
          (since-entry? (poll-since-entry? poll)))
-    (if (and poll?
+    (if (and (intrs-enabled? (node-env node))
              (case where
                ((call)
                 (> delta (- poll-period poll-head)))
                ((tail-call)
                 (> delta poll-tail))
                ((return)
-                (and since-entry? (> delta (+ poll-head poll-tail))))
+                (and since-entry?
+                     (poll-on-return? (node-env node))
+                     (> delta (+ poll-head poll-tail))))
                ((internal)
                 #f)
                (else
@@ -2992,7 +3010,7 @@
                             result-var
                             live
                             (node->comment node))
-          (seal-bb (intrs-enabled? (node-env node)) 'internal)
+          (seal-bb node 'internal)
           (let* ((true-lbl
                   (bbs-new-lbl! *bbs*))
                  (false-lbl
@@ -3544,7 +3562,7 @@
                                                  empty-var)
                                         (loop4 (- i 1)))))))
 
-                              (seal-bb (intrs-enabled? (node-env node)) where)
+                              (seal-bb node where)
 
                               (if (and (not (intrs-enabled? (node-env node)))
                                        (not (reason-tail? reason2))
@@ -4181,7 +4199,7 @@
                        empty-var)
               (loop3 (- i 1))))))
 
-      (seal-bb (intrs-enabled? (node-env node)) 'call)
+      (seal-bb node 'call)
 
       (emit-instr!
        (make-jump (make-lbl task-lbl)

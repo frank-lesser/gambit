@@ -8,11 +8,11 @@
 #define ___GAMBIT_H
 
 #ifndef ___VERSION
-#define ___VERSION 408009
+#define ___VERSION 409000
 #endif
 
-#if ___VERSION != 408009
-#include "gambit-not408009.h"
+#if ___VERSION != 409000
+#include "gambit-not409000.h"
 #else
 
 #ifdef HAVE_CONFIG_H
@@ -1222,8 +1222,30 @@
 #define ___NB_ARG_REGS 3
 
 /*
- * Determine if label values (a gcc extension to C) should be used.
+ * Determine if label values (a gcc extension to C) should be supported.
  */
+
+#ifdef ___NOT_SUPPORT_LABEL_VALUES
+#ifdef ___SUPPORT_LABEL_VALUES
+#error "Define either ___SUPPORT_LABEL_VALUES or ___NOT_SUPPORT_LABEL_VALUES"
+#endif
+#else
+#ifndef ___SUPPORT_LABEL_VALUES
+#define ___SUPPORT_LABEL_VALUES
+#endif
+#endif
+
+/*
+ * Determine if label values should be used.
+ */
+
+#ifndef ___SUPPORT_LABEL_VALUES
+
+#undef ___USE_LABEL_VALUES
+#undef ___NOT_USE_LABEL_VALUES
+#define ___NOT_USE_LABEL_VALUES
+
+#else
 
 #ifdef ___USE_LABEL_VALUES
 #ifdef ___NOT_USE_LABEL_VALUES
@@ -1242,6 +1264,8 @@
 #define ___NOT_USE_LABEL_VALUES
 #endif
 #endif
+#endif
+
 #endif
 
 /*
@@ -2016,17 +2040,24 @@ ___CAST_U64((val)<<(((i)&7)<<3))
  * ___TB = number of tag bits
  * ___tFIXNUM   = tag for fixnums (small integers), must be 0
  * ___tSPECIAL  = tag for other immediates (#f, #t, (), #!eof, chars, ...)
- * ___tMEM1     = tag #1 for memory allocated objects (lower bit must be 1)
- * ___tMEM2     = tag #2 for memory allocated objects (lower bit must be 1)
+ * ___tMEM1     = tag #1 for memory allocated objects
+ * ___tMEM2     = tag #2 for memory allocated objects
  * ___tSUBTYPED = ___tMEM1
  * ___tPAIR     = ___tMEM1 or ___tMEM2
  */
 
 #define ___TB 2
 #define ___tFIXNUM   0
+#define ___tMEM2     3
+
+#ifdef ___USE_EVEN_TAG_FOR_SUBTYPED
+#define ___tSPECIAL  1
+#define ___tMEM1     2
+#else
 #define ___tSPECIAL  2
 #define ___tMEM1     1
-#define ___tMEM2     3
+#endif
+
 #define ___tSUBTYPED ___tMEM1
 
 #ifdef ___USE_SAME_TAG_FOR_PAIRS_AND_SUBTYPED
@@ -2035,9 +2066,9 @@ ___CAST_U64((val)<<(((i)&7)<<3))
 #define ___tPAIR ___tMEM2
 #endif
 
-#define ___MEM_ALLOCATED(obj)((obj)&1)
-#define ___MEM_ALLOCATED_CLEAR(obj)((obj)&~___CAST(___WORD,1))
-#define ___MEM_ALLOCATED_SET(obj)((obj)|1)
+#define ___MEM_ALLOCATED(obj)((obj)&___tMEM1)
+#define ___MEM_ALLOCATED_CLEAR(obj)((obj)&~___CAST(___WORD,___tMEM1))
+#define ___MEM_ALLOCATED_SET(obj)((obj)|___tMEM1)
 
 /*
  * Subtype tag assignment.
@@ -2261,9 +2292,7 @@ ___CAST_U64((val)<<(((i)&7)<<3))
 
 #ifdef ___SUPPORT_LOWLEVEL_EXEC
 #define ___REFERENCE_TO_BODY (-1)
-#define ___PSTATE_ALIGN_MULTIPLIER 256
-#define ___PSTATE_ALIGN_MODULUS    192
-#undef ___USE_LABEL_VALUES
+#define ___LABEL_LOWLEVEL_CODE 1
 #else
 #define ___REFERENCE_TO_BODY 1
 #endif
@@ -2956,37 +2985,42 @@ ___FIX((((___BIGMDOUBLEDIGIT)___BIGMFETCH(___BODY_AS(u,___tSUBTYPED),___INT(___B
 #define ___FIXADD(x,y)((___WORD)((x)+(y)))
 
 #ifdef ___USE_builtin_op_overflow
-#define ___FIXADDP(x,y)(___EXPECT_FALSE(__builtin_add_overflow((___WORD)(x),(___WORD)(y),&___temp))?___FAL:___temp)
+#define ___FIXADDP_NOTFALSEP(var,x,y)!___EXPECT_FALSE(__builtin_add_overflow((___WORD)(x),(___WORD)(y),&var))
 #else
-#define ___FIXADDP(x,y)(___temp=___FIXWRAPADD(x,y),___EXPECT_FALSE(((___temp^(x))&(___temp^(y)))<0)?___FAL:___temp)
+#define ___FIXADDP_NOTFALSEP(var,x,y)(___temp=___FIXWRAPADD(x,y),___EXPECT_FALSE(((___temp^(x))&(___temp^(y)))<0)?0:(var=___temp,1))
 #endif
+#define ___FIXADDP(x,y)(___FIXADDP_NOTFALSEP(___temp,x,y)?___temp:___FAL)
 
 #define ___FIX_1 ___FIX(1)
 #define ___FIXWRAPMUL(x,y)___CAST(___WORD,___CAST(___UWORD,x)*___CAST(___UWORD,___INT(y)))
 #define ___FIXMUL(x,y)((___WORD)((x)*___INT(y)))
 
 #ifdef ___USE_builtin_op_overflow
-#define ___FIXMULP(x,y)(___EXPECT_FALSE(__builtin_mul_overflow((___WORD)(x),___INT(y),&___temp))?___FAL:___temp)
+#define ___FIXMULP_NOTFALSEP(var,x,y)!___EXPECT_FALSE(__builtin_mul_overflow((___WORD)(x),___INT(y),&var))
 #else
-#define ___FIXMULP(x,y)(___EXPECT_FALSE(___FIXQUO((___temp=___FIXWRAPMUL(x,y)),y)!=(x))?___FAL:___temp)
+#define ___FIXMULP_NOTFALSEP(var,x,y)(___EXPECT_FALSE(___FIXQUO((___temp=___FIXWRAPMUL(x,y)),y)!=(x))?0:(var=___temp,1))
 #endif
+#define ___FIXMULP(x,y)(___FIXMULP_NOTFALSEP(___temp,x,y)?___temp:___FAL)
 
 #define ___FIXWRAPSQUARE(x)___FIXWRAPMUL(x,x)
 #define ___FIXSQUARE(x)___FIXMUL(x,x)
-#define ___FIXSQUAREP(x)(___EXPECT_FALSE(___CAST(___UWORD,x)+___CAST(___UWORD,___FIX(___SQRT_MAX_FIX))>(___CAST(___UWORD,___FIX(___SQRT_MAX_FIX))<<1))?___FAL:___FIXSQUARE(x))
+#define ___FIXSQUAREP_NOTFALSEP(var,x)(___EXPECT_FALSE(___CAST(___UWORD,x)+___CAST(___UWORD,___FIX(___SQRT_MAX_FIX))>(___CAST(___UWORD,___FIX(___SQRT_MAX_FIX))<<1))?0:(var=___FIXSQUARE(x),1))
+#define ___FIXSQUAREP(x)(___FIXSQUAREP_NOTFALSEP(___temp,x)?___temp:___FAL)
 
 #define ___FIXWRAPNEG(x)___CAST(___WORD,-___CAST(___UWORD,x))
 #define ___FIXNEG(x)((___WORD)(-(x)))
+#define ___FIXNEGP_NOTFALSEP(var,x)(___EXPECT_FALSE((x)==___FIX(___MIN_FIX))?0:(var=___FIXNEG(x),1))
 #define ___FIXNEGP(x)(___EXPECT_FALSE((x)==___FIX(___MIN_FIX))?___FAL:___FIXNEG(x))
 
 #define ___FIXWRAPSUB(x,y)___CAST(___WORD,___CAST(___UWORD,x)-___CAST(___UWORD,y))
 #define ___FIXSUB(x,y)((___WORD)((x)-(y)))
 
 #ifdef ___USE_builtin_op_overflow
-#define ___FIXSUBP(x,y)(___EXPECT_FALSE(__builtin_sub_overflow((___WORD)(x),(___WORD)(y),&___temp))?___FAL:___temp)
+#define ___FIXSUBP_NOTFALSEP(var,x,y)!___EXPECT_FALSE(__builtin_sub_overflow((___WORD)(x),(___WORD)(y),&var))
 #else
-#define ___FIXSUBP(x,y)(___temp=___FIXWRAPSUB(x,y),___EXPECT_FALSE(((___temp^(x))&((y)^(x)))<0)?___FAL:___temp)
+#define ___FIXSUBP_NOTFALSEP(var,x,y)(___temp=___FIXWRAPSUB(x,y),___EXPECT_FALSE(((___temp^(x))&((y)^(x)))<0)?0:(var=___temp,1))
 #endif
+#define ___FIXSUBP(x,y)(___FIXSUBP_NOTFALSEP(___temp,x,y)?___temp:___FAL)
 
 #define ___FIXWRAPQUO(x,y)((y)==___FIX(-1)?___FIXWRAPNEG(x):___FIXQUO(x,y))
 #define ___FIXQUO(x,y)___FIX(((x)/(y)))
@@ -3002,7 +3036,8 @@ ___FIX((((___BIGMDOUBLEDIGIT)___BIGMFETCH(___BODY_AS(u,___tSUBTYPED),___INT(___B
 
 #define ___FIXWRAPABS(x)((x)<0?___FIXWRAPNEG(x):(x))
 #define ___FIXABS(x)((x)<0?___FIXNEG(x):(x))
-#define ___FIXABSP(x)((x)<0?((___EXPECT_FALSE((x)==___FIX(___MIN_FIX))?___FAL:___FIXNEG(x))):(x))
+#define ___FIXABSP_NOTFALSEP(var,x)((x)<0?(___EXPECT_FALSE((x)==___FIX(___MIN_FIX))?0:(var=___FIXNEG(x),1)):(var=(x),1))
+#define ___FIXABSP(x)((x)<0?(___EXPECT_FALSE((x)==___FIX(___MIN_FIX))?___FAL:___FIXNEG(x)):(x))
 
 #if ___SCMOBJ_WIDTH == 32
 #define ___SCMOBJ_MASK(x,y)y
@@ -3088,6 +3123,159 @@ ___FIX((((___BIGMDOUBLEDIGIT)___BIGMFETCH(___BODY_AS(u,___tSUBTYPED),___INT(___B
 #define ___FIXLSHRP(x,y)___FIXWRAPLSHRP(x,y) /*TODO: remove*/
 #define ___FIXTOCHR(x)(((x)&~___TMASK)+___tSPECIAL)
 #define ___FIXFROMCHR(x)((x)&~___TMASK)
+
+/*
+ * The following definitions must match the structure of ports defined
+ * in _io#.scm .
+ */
+
+#define ___PORT_MUTEX                1
+#define ___PORT_RKIND                2
+#define ___PORT_WKIND                3
+#define ___PORT_NAME                 4
+#define ___PORT_WAIT                 5
+#define ___PORT_CLOSE                6
+#define ___PORT_ROPTIONS             7
+#define ___PORT_RTIMEOUT             8
+#define ___PORT_RTIMEOUT_THUNK       9
+#define ___PORT_SET_RTIMEOUT         10
+#define ___PORT_WOPTIONS             11
+#define ___PORT_WTIMEOUT             12
+#define ___PORT_WTIMEOUT_THUNK       13
+#define ___PORT_SET_WTIMEOUT         14
+#define ___PORT_IO_EXCEPTION_HANDLER 15
+
+#define ___PORT_OBJECT_READ_DATUM    16
+#define ___PORT_OBJECT_WRITE_DATUM   17
+#define ___PORT_OBJECT_NEWLINE       18
+#define ___PORT_OBJECT_FORCE_OUTPUT  19
+
+#define ___PORT_OBJECT_OTHER1        20
+#define ___PORT_OBJECT_OTHER2        21
+#define ___PORT_OBJECT_OTHER3        22
+
+#define ___PORT_CHAR_RBUF            20
+#define ___PORT_CHAR_RLO             21
+#define ___PORT_CHAR_RHI             22
+#define ___PORT_CHAR_RCHARS          23
+#define ___PORT_CHAR_RLINES          24
+#define ___PORT_CHAR_RCURLINE        25
+#define ___PORT_CHAR_RBUF_FILL       26
+#define ___PORT_CHAR_PEEK_EOFP       27
+
+#define ___PORT_CHAR_WBUF            28
+#define ___PORT_CHAR_WLO             29
+#define ___PORT_CHAR_WHI             30
+#define ___PORT_CHAR_WCHARS          31
+#define ___PORT_CHAR_WLINES          32
+#define ___PORT_CHAR_WCURLINE        33
+#define ___PORT_CHAR_WBUF_DRAIN      34
+#define ___PORT_INPUT_READTABLE      35
+#define ___PORT_OUTPUT_READTABLE     36
+#define ___PORT_OUTPUT_WIDTH         37
+
+#define ___PORT_CHAR_OTHER1          38
+#define ___PORT_CHAR_OTHER2          39
+#define ___PORT_CHAR_OTHER3          40
+#define ___PORT_CHAR_OTHER4          41
+#define ___PORT_CHAR_OTHER5          42
+
+#define ___PORT_BYTE_RBUF            38
+#define ___PORT_BYTE_RLO             39
+#define ___PORT_BYTE_RHI             40
+#define ___PORT_BYTE_RBUF_FILL       41
+
+#define ___PORT_BYTE_WBUF            42
+#define ___PORT_BYTE_WLO             43
+#define ___PORT_BYTE_WHI             44
+#define ___PORT_BYTE_WBUF_DRAIN      45
+
+#define ___PORT_BYTE_OTHER1          46
+#define ___PORT_BYTE_OTHER2          47
+
+#define ___PORT_RDEVICE_CONDVAR      46
+#define ___PORT_WDEVICE_CONDVAR      47
+
+#define ___PORT_DEVICE_OTHER1        48
+#define ___PORT_DEVICE_OTHER2        49
+
+#define ___DENV_INPUT_PORT  5
+#define ___DENV_OUTPUT_PORT 6
+
+#define ___PEEKCHAR0P \
+{ ___SCMOBJ port = ___CDR(___FIELD(___FIELD(___CURRENTTHREAD,___THREAD_DENV),___DENV_INPUT_PORT)); \
+  ___PEEKCHAR1P(port) \
+}
+
+#define ___PEEKCHAR1P(port) \
+{ ___SCMOBJ rlo; \
+  ___SCMOBJ rhi; \
+  ___SCMOBJ mutex = ___FIELD(port,___PORT_MUTEX); \
+  if (___PRIMITIVETRYLOCK(mutex,___FIX(___OBJ_LOCK1),___FIX(___OBJ_LOCK2))) \
+    { \
+      rlo = ___FIELD(port,___PORT_CHAR_RLO); \
+      rhi = ___FIELD(port,___PORT_CHAR_RHI); \
+      if (___FIXGE(rlo,rhi) || ___CHAREQP((___temp = ___STRINGREF(___FIELD(port,___PORT_CHAR_RBUF),rlo)),___CHR(10))) \
+        ___temp = ___FAL; \
+      ___PRIMITIVEUNLOCK(mutex,___FIX(___OBJ_LOCK1),___FIX(___OBJ_LOCK2)) \
+    } \
+  else \
+    ___temp = ___FAL; \
+}
+
+#define ___READCHAR0P \
+{ ___SCMOBJ port = ___CDR(___FIELD(___FIELD(___CURRENTTHREAD,___THREAD_DENV),___DENV_INPUT_PORT)); \
+  ___READCHAR1P(port) \
+}
+
+#define ___READCHAR1P(port) \
+{ ___SCMOBJ rlo; \
+  ___SCMOBJ rhi; \
+  ___SCMOBJ mutex = ___FIELD(port,___PORT_MUTEX); \
+  if (___PRIMITIVETRYLOCK(mutex,___FIX(___OBJ_LOCK1),___FIX(___OBJ_LOCK2))) \
+    { \
+      rlo = ___FIELD(port,___PORT_CHAR_RLO); \
+      rhi = ___FIELD(port,___PORT_CHAR_RHI); \
+      if (___FIXGE(rlo,rhi) || ___CHAREQP((___temp = ___STRINGREF(___FIELD(port,___PORT_CHAR_RBUF),rlo)),___CHR(10))) \
+        ___temp = ___FAL; \
+      else \
+        ___FIELD(port,___PORT_CHAR_RLO) = ___FIXADD(rlo,___FIX(1L)); \
+      ___PRIMITIVEUNLOCK(mutex,___FIX(___OBJ_LOCK1),___FIX(___OBJ_LOCK2)) \
+    } \
+  else \
+    ___temp = ___FAL; \
+}
+
+#define ___WRITECHAR1P(c) \
+{ ___SCMOBJ port = ___CDR(___FIELD(___FIELD(___CURRENTTHREAD,___THREAD_DENV),___DENV_OUTPUT_PORT)); \
+  ___WRITECHAR2P(c,port) \
+}
+
+#define ___WRITECHAR2P(c,port) \
+if (___CHAREQP(c,___CHR(10)) || ___FIXLT(___FIXAND(___FIELD(port,___PORT_WOPTIONS),___FIX(2047L)),___FIX(1024L))) \
+  ___temp = ___FAL; \
+else \
+  { \
+    ___SCMOBJ wbuf; \
+    ___SCMOBJ whi; \
+    ___SCMOBJ mutex = ___FIELD(port,___PORT_MUTEX); \
+    if (___PRIMITIVETRYLOCK(mutex,___FIX(___OBJ_LOCK1),___FIX(___OBJ_LOCK2))) \
+      { \
+        wbuf = ___FIELD(port,___PORT_CHAR_WBUF); \
+        whi = ___FIXADD(___FIELD(port,___PORT_CHAR_WHI),___FIX(1L)); \
+        if (___FIXGE(whi,___STRINGLENGTH(wbuf))) \
+          ___temp = ___FAL; \
+        else \
+          { \
+            ___STRINGSET(wbuf,___FIXSUB(whi,___FIX(1L)),c) \
+            ___FIELD(port,___PORT_CHAR_WHI) = whi; \
+            ___temp = ___VOID; \
+          } \
+        ___PRIMITIVEUNLOCK(mutex,___FIX(___OBJ_LOCK1),___FIX(___OBJ_LOCK2)) \
+      } \
+    else \
+      ___temp = ___FAL; \
+  }
 
 /* IFJUMP-able operations */
 
@@ -3699,12 +3887,12 @@ ___TICKETLOCK_UNLOCK2(___FIELD(obj,___INT(next)),___FIELD(obj,___INT(current)));
 
 
 #define ___THREAD_SAVE \
-if (___R0 == ___GSTATE->handler_break) \
+if (___R0 == ___ps->handler_break) \
   frame = ___STK(-___BREAK_FRAME_NEXT); \
 else \
   { \
     ___SET_STK(-___FRAME_STACK_RA,___R0) \
-    ___R0 = ___GSTATE->handler_break; \
+    ___R0 = ___ps->handler_break; \
     frame = ___CAST(___SCMOBJ,___fp); \
     ___ADJFP(___BREAK_FRAME_SPACE) \
     ___SET_STK(-___BREAK_FRAME_NEXT,frame) \
@@ -3768,7 +3956,7 @@ ___FIELD(___FIELD(thread,___THREAD_CONT),___CONTINUATION_FRAME) = frame;
   ___INTERRUPT_MASK_SET(___FIELD(___FIELD(thread,___THREAD_DENV),___DENV_INTERRUPT_MASK)); \
   ___FIELD(thread,___THREAD_LAST_PROCESSOR) = ___CURRENTPROCESSOR; \
   ___CURRENTTHREADSET(thread) \
-  ___SET_R0(___GSTATE->handler_break) \
+  ___SET_R0(___ps->handler_break) \
 }
 
 #define ___JUMP_THREAD_RESTORE2(jump) \
@@ -3895,15 +4083,15 @@ if (___fp != ___ps->stack_break) \
 #define ___FRAME_FETCH_RA \
 ((___fp != ___ps->stack_break) \
 ? ___STK(-___FRAME_STACK_RA) \
-: ___GSTATE->handler_break)
+: ___ps->handler_break)
 
 #define ___CONTINUATION_CAPTURE \
-if (___R0 == ___GSTATE->handler_break) \
+if (___R0 == ___ps->handler_break) \
   frame = ___STK(-___BREAK_FRAME_NEXT); \
 else \
   { \
     ___SET_STK(-___FRAME_STACK_RA,___R0) \
-    ___R0 = ___GSTATE->handler_break; \
+    ___R0 = ___ps->handler_break; \
     frame = ___CAST(___SCMOBJ,___fp); \
   } \
 ___ADJFP(___ROUND_TO_MULT(___SUBTYPED_BODY+___CONTINUATION_SIZE,___FRAME_ALIGN)) \
@@ -3971,7 +4159,7 @@ temp = ___FIELD(___FIELD(temp,___DENV_LOCAL),___ENV_NAME_VAL); \
 ___FIELD(thread,___THREAD_DENV_CACHE1) = temp; \
 ___FIELD(thread,___THREAD_DENV_CACHE2) = temp; \
 ___FIELD(thread,___THREAD_DENV_CACHE3) = temp; \
-___SET_R0(___GSTATE->handler_break)
+___SET_R0(___ps->handler_break)
 
 #define ___JUMP_CONTINUATION_GRAFT_NO_WINDING2(jump) \
 { ___SCMOBJ cont; \
@@ -4038,7 +4226,7 @@ ___SET_R0(___GSTATE->handler_break)
   ___FIELD(thread,___THREAD_DENV_CACHE1) = temp; \
   ___FIELD(thread,___THREAD_DENV_CACHE2) = temp; \
   ___FIELD(thread,___THREAD_DENV_CACHE3) = temp; \
-  ___JUMPPRM(___NOTHING,___GSTATE->handler_break) \
+  ___JUMPPRM(___NOTHING,___ps->handler_break) \
 }
 
 /*---------------------------------------------------------------------------*/
@@ -4231,15 +4419,17 @@ switch((___pc-=___start)/(___LABEL_SIZE*___WS)) \
 #define ___DEF_P_SLBL(id)
 #define ___END_P_SLBL ___SM(___NOTHING,___END_SLBL)
 
+#define ___REGISTER
+
 #define ___PSHEAP ___ps->hp
-#define ___D_HEAP register ___WORD *___hp;
+#define ___D_HEAP ___REGISTER ___WORD *___hp;
 #define ___R_HEAP ___R_HEAP_EXPR;
 #define ___W_HEAP ___W_HEAP_EXPR;
 #define ___R_HEAP_EXPR ___hp=___PSHEAP
 #define ___W_HEAP_EXPR ___PSHEAP=___hp
 
 #define ___PSFP ___ps->fp
-#define ___D_FP register ___WORD *___fp;
+#define ___D_FP ___REGISTER ___WORD *___fp;
 #define ___R_FP ___SET_FP(___PSFP)
 #define ___W_FP ___PSFP=___fp;
 
@@ -4309,7 +4499,7 @@ switch((___pc-=___start)/(___LABEL_SIZE*___WS)) \
 
 #define ___PSR0 ___ps->r[0]
 #if ___MAX_LOCAL_GVM_REGS > 0
-#define ___D_R0 register ___WORD ___r0;
+#define ___D_R0 ___REGISTER ___WORD ___r0;
 #define ___R_R0 ___r0=___PSR0;
 #define ___W_R0 ___PSR0=___r0;
 #define ___R0 ___r0
@@ -4334,7 +4524,7 @@ switch((___pc-=___start)/(___LABEL_SIZE*___WS)) \
 
 #define ___PSR1 ___ps->r[1]
 #if ___MAX_LOCAL_GVM_REGS > 1
-#define ___D_R1 register ___WORD ___r1;
+#define ___D_R1 ___REGISTER ___WORD ___r1;
 #define ___R_R1 ___r1=___PSR1;
 #define ___W_R1 ___PSR1=___r1;
 #define ___R1 ___r1
@@ -4370,7 +4560,7 @@ if ((na)>0) ___POP_R1_TO_R1
 
 #define ___PSR2 ___ps->r[2]
 #if ___MAX_LOCAL_GVM_REGS > 2
-#define ___D_R2 register ___WORD ___r2;
+#define ___D_R2 ___REGISTER ___WORD ___r2;
 #define ___R_R2 ___r2=___PSR2;
 #define ___W_R2 ___PSR2=___r2;
 #define ___R2 ___r2
@@ -4416,7 +4606,7 @@ switch (na) \
 
 #define ___PSR3 ___ps->r[3]
 #if ___MAX_LOCAL_GVM_REGS > 3
-#define ___D_R3 register ___WORD ___r3;
+#define ___D_R3 ___REGISTER ___WORD ___r3;
 #define ___R_R3 ___r3=___PSR3;
 #define ___W_R3 ___PSR3=___r3;
 #define ___R3 ___r3
@@ -4464,7 +4654,7 @@ switch (na) \
 
 #define ___PSR4 ___ps->r[4]
 #if ___MAX_LOCAL_GVM_REGS > 4
-#define ___D_R4 register ___WORD ___r4;
+#define ___D_R4 ___REGISTER ___WORD ___r4;
 #define ___R_R4 ___r4=___PSR4;
 #define ___W_R4 ___PSR4=___r4;
 #define ___R4 ___r4
@@ -4514,7 +4704,7 @@ switch (na) \
 
 #define ___PSR5 ___ps->r[5]
 #if ___MAX_LOCAL_GVM_REGS > 5
-#define ___D_R5 register ___WORD ___r5;
+#define ___D_R5 ___REGISTER ___WORD ___r5;
 #define ___R_R5 ___r5=___PSR5;
 #define ___W_R5 ___PSR5=___r5;
 #define ___R5 ___r5
@@ -4566,7 +4756,7 @@ switch (na) \
 
 #define ___PSR6 ___ps->r[6]
 #if ___MAX_LOCAL_GVM_REGS > 6
-#define ___D_R6 register ___WORD ___r6;
+#define ___D_R6 ___REGISTER ___WORD ___r6;
 #define ___R_R6 ___r6=___PSR6;
 #define ___W_R6 ___PSR6=___r6;
 #define ___R6 ___r6
@@ -4620,7 +4810,7 @@ switch (na) \
 
 #define ___PSR7 ___ps->r[7]
 #if ___MAX_LOCAL_GVM_REGS > 7
-#define ___D_R7 register ___WORD ___r7;
+#define ___D_R7 ___REGISTER ___WORD ___r7;
 #define ___R_R7 ___r7=___PSR7;
 #define ___W_R7 ___PSR7=___r7;
 #define ___R7 ___r7
@@ -4676,7 +4866,7 @@ switch (na) \
 
 #define ___PSR8 ___ps->r[8]
 #if ___MAX_LOCAL_GVM_REGS > 8
-#define ___D_R8 register ___WORD ___r8;
+#define ___D_R8 ___REGISTER ___WORD ___r8;
 #define ___R_R8 ___r8=___PSR8;
 #define ___W_R8 ___PSR8=___r8;
 #define ___R8 ___r8
@@ -4734,7 +4924,7 @@ switch (na) \
 
 #define ___PSR9 ___ps->r[9]
 #if ___MAX_LOCAL_GVM_REGS > 9
-#define ___D_R9 register ___WORD ___r9;
+#define ___D_R9 ___REGISTER ___WORD ___r9;
 #define ___R_R9 ___r9=___PSR9;
 #define ___W_R9 ___PSR9=___r9;
 #define ___R9 ___r9
@@ -4794,7 +4984,7 @@ switch (na) \
 
 #define ___PSR10 ___ps->r[10]
 #if ___MAX_LOCAL_GVM_REGS > 10
-#define ___D_R10 register ___WORD ___r10;
+#define ___D_R10 ___REGISTER ___WORD ___r10;
 #define ___R_R10 ___r10=___PSR10;
 #define ___W_R10 ___PSR10=___r10;
 #define ___R10 ___r10
@@ -4856,7 +5046,7 @@ switch (na) \
 
 #define ___PSR11 ___ps->r[11]
 #if ___MAX_LOCAL_GVM_REGS > 11
-#define ___D_R11 register ___WORD ___r11;
+#define ___D_R11 ___REGISTER ___WORD ___r11;
 #define ___R_R11 ___r11=___PSR11;
 #define ___W_R11 ___PSR11=___r11;
 #define ___R11 ___r11
@@ -4920,7 +5110,7 @@ switch (na) \
 
 #define ___PSR12 ___ps->r[12]
 #if ___MAX_LOCAL_GVM_REGS > 12
-#define ___D_R12 register ___WORD ___r12;
+#define ___D_R12 ___REGISTER ___WORD ___r12;
 #define ___R_R12 ___r12=___PSR12;
 #define ___W_R12 ___PSR12=___r12;
 #define ___R12 ___r12
@@ -4986,7 +5176,7 @@ switch (na) \
 
 #define ___PSR13 ___ps->r[13]
 #if ___MAX_LOCAL_GVM_REGS > 13
-#define ___D_R13 register ___WORD ___r13;
+#define ___D_R13 ___REGISTER ___WORD ___r13;
 #define ___R_R13 ___r13=___PSR13;
 #define ___W_R13 ___PSR13=___r13;
 #define ___R13 ___r13
@@ -5011,7 +5201,7 @@ switch (na) \
 
 #define ___PSR14 ___ps->r[14]
 #if ___MAX_LOCAL_GVM_REGS > 14
-#define ___D_R14 register ___WORD ___r14;
+#define ___D_R14 ___REGISTER ___WORD ___r14;
 #define ___R_R14 ___r14=___PSR14;
 #define ___W_R14 ___PSR14=___r14;
 #define ___R14 ___r14
@@ -5036,7 +5226,7 @@ switch (na) \
 
 #define ___PSR15 ___ps->r[15]
 #if ___MAX_LOCAL_GVM_REGS > 15
-#define ___D_R15 register ___WORD ___r15;
+#define ___D_R15 ___REGISTER ___WORD ___r15;
 #define ___R_R15 ___r15=___PSR15;
 #define ___W_R15 ___PSR15=___r15;
 #define ___R15 ___r15
@@ -5061,7 +5251,7 @@ switch (na) \
 
 #define ___PSR16 ___ps->r[16]
 #if ___MAX_LOCAL_GVM_REGS > 16
-#define ___D_R16 register ___WORD ___r16;
+#define ___D_R16 ___REGISTER ___WORD ___r16;
 #define ___R_R16 ___r16=___PSR16;
 #define ___W_R16 ___PSR16=___r16;
 #define ___R16 ___r16
@@ -5086,7 +5276,7 @@ switch (na) \
 
 #define ___PSR17 ___ps->r[17]
 #if ___MAX_LOCAL_GVM_REGS > 17
-#define ___D_R17 register ___WORD ___r17;
+#define ___D_R17 ___REGISTER ___WORD ___r17;
 #define ___R_R17 ___r17=___PSR17;
 #define ___W_R17 ___PSR17=___r17;
 #define ___R17 ___r17
@@ -5111,7 +5301,7 @@ switch (na) \
 
 #define ___PSR18 ___ps->r[18]
 #if ___MAX_LOCAL_GVM_REGS > 18
-#define ___D_R18 register ___WORD ___r18;
+#define ___D_R18 ___REGISTER ___WORD ___r18;
 #define ___R_R18 ___r18=___PSR18;
 #define ___W_R18 ___PSR18=___r18;
 #define ___R18 ___r18
@@ -5136,7 +5326,7 @@ switch (na) \
 
 #define ___PSR19 ___ps->r[19]
 #if ___MAX_LOCAL_GVM_REGS > 19
-#define ___D_R19 register ___WORD ___r19;
+#define ___D_R19 ___REGISTER ___WORD ___r19;
 #define ___R_R19 ___r19=___PSR19;
 #define ___W_R19 ___PSR19=___r19;
 #define ___R19 ___r19
@@ -5161,7 +5351,7 @@ switch (na) \
 
 #define ___PSR20 ___ps->r[20]
 #if ___MAX_LOCAL_GVM_REGS > 20
-#define ___D_R20 register ___WORD ___r20;
+#define ___D_R20 ___REGISTER ___WORD ___r20;
 #define ___R_R20 ___r20=___PSR20;
 #define ___W_R20 ___PSR20=___r20;
 #define ___R20 ___r20
@@ -5186,7 +5376,7 @@ switch (na) \
 
 #define ___PSR21 ___ps->r[21]
 #if ___MAX_LOCAL_GVM_REGS > 21
-#define ___D_R21 register ___WORD ___r21;
+#define ___D_R21 ___REGISTER ___WORD ___r21;
 #define ___R_R21 ___r21=___PSR21;
 #define ___W_R21 ___PSR21=___r21;
 #define ___R21 ___r21
@@ -5211,7 +5401,7 @@ switch (na) \
 
 #define ___PSR22 ___ps->r[22]
 #if ___MAX_LOCAL_GVM_REGS > 22
-#define ___D_R22 register ___WORD ___r22;
+#define ___D_R22 ___REGISTER ___WORD ___r22;
 #define ___R_R22 ___r22=___PSR22;
 #define ___W_R22 ___PSR22=___r22;
 #define ___R22 ___r22
@@ -5236,7 +5426,7 @@ switch (na) \
 
 #define ___PSR23 ___ps->r[23]
 #if ___MAX_LOCAL_GVM_REGS > 23
-#define ___D_R23 register ___WORD ___r23;
+#define ___D_R23 ___REGISTER ___WORD ___r23;
 #define ___R_R23 ___r23=___PSR23;
 #define ___W_R23 ___PSR23=___r23;
 #define ___R23 ___r23
@@ -5261,7 +5451,7 @@ switch (na) \
 
 #define ___PSR24 ___ps->r[24]
 #if ___MAX_LOCAL_GVM_REGS > 24
-#define ___D_R24 register ___WORD ___r24;
+#define ___D_R24 ___REGISTER ___WORD ___r24;
 #define ___R_R24 ___r24=___PSR24;
 #define ___W_R24 ___PSR24=___r24;
 #define ___R24 ___r24
@@ -5339,12 +5529,12 @@ ___JUMP(___LABEL_ENTRY_GET(___SELF))}
 {nargs ___SELF=val; \
 if (___EXPECT_TRUE(___PROCEDUREP(___SELF))) \
   ___JUMP(___LABEL_ENTRY_GET(___SELF)) \
-___ps->temp1=___SELF;___JUMPEXTPRM(___NOTHING,___GSTATE->handler_not_proc)}
+___ps->temp1=___SELF;___JUMPEXTPRM(___NOTHING,___ps->handler_not_proc)}
 #define ___JUMPGLOSAFE(nargs,i,glo) \
 {nargs ___SELF=___GLO(i,glo); \
 if (___EXPECT_TRUE(___PROCEDUREP(___SELF))) \
   ___JUMP(___LABEL_ENTRY_GET(___SELF)) \
-___ps->temp4=(___WORD)&___GLOSTRUCT(i,glo);___JUMPEXTPRM(___NOTHING,___GSTATE->handler_not_proc_glo)}
+___ps->temp4=(___WORD)&___GLOSTRUCT(i,glo);___JUMPEXTPRM(___NOTHING,___ps->handler_not_proc_glo)}
 
 #ifdef ___NOT_SAFE_CALLS
 #undef ___JUMPGENSAFE
@@ -5390,34 +5580,38 @@ if (___EXPECT_TRUE(guard(___sw))) switch(___INT(___FIELD(___sw,___SYMKEY_HASH)) 
 
 #define ___WRONG_NARGS(lbl,nb_req,nb_opt,nb_key) \
 {___ps->temp1=___LBL(lbl); \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_wrong_nargs)}
+___JUMPEXTPRM(___NOTHING,___ps->handler_wrong_nargs)}
 
 #define ___GET_REST(lbl,nb_req,nb_opt,nb_key) \
 if (___ps->na>=0){___ps->temp1=___LBL(lbl); \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_get_rest)}
+___JUMPEXTPRM(___NOTHING,___ps->handler_get_rest)}
 
 #define ___GET_KEY(lbl,nb_req,nb_opt,nb_key,key_descr) \
 if (___ps->na>=0){___ps->temp1=___LBL(lbl);___ps->temp2=nb_req+nb_opt; \
-___ps->temp3=key_descr;___JUMPEXTPRM(___NOTHING,___GSTATE->handler_get_key)}
+___ps->temp3=key_descr;___JUMPEXTPRM(___NOTHING,___ps->handler_get_key)}
 
 #define ___GET_REST_KEY(lbl,nb_req,nb_opt,nb_key,key_descr) \
 if (___ps->na>=0){___ps->temp1=___LBL(lbl);___ps->temp2=nb_req+nb_opt; \
 ___ps->temp3=key_descr;___ps->temp4=1; \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_get_key_rest)}
+___JUMPEXTPRM(___NOTHING,___ps->handler_get_key_rest)}
 
 #define ___GET_KEY_REST(lbl,nb_req,nb_opt,nb_key,key_descr) \
 if (___ps->na>=0){___ps->temp1=___LBL(lbl);___ps->temp2=nb_req+nb_opt; \
 ___ps->temp3=key_descr;___ps->temp4=0; \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_get_key_rest)}
+___JUMPEXTPRM(___NOTHING,___ps->handler_get_key_rest)}
 
 #define ___BOOLEAN(x)(x)?___TRU:___FAL
 #define ___EXPR(x)x;
 
 #ifdef ___SUPPORT_LOWLEVEL_EXEC
 
-#ifdef ___CPU_x86_32
+#ifdef ___CPU_x86
 
-#define ___LABEL_SIZE 4
+/* Useful to have constant bit pattern in low 16 bits of pstate */
+#define ___PSTATE_ALIGN_MULTIPLIER (1<<16)
+#define ___PSTATE_ALIGN_MODULUS    0x8888
+
+#ifdef ___CPU_x86_32
 
 #define ___CLO_LOWLEVEL_TRAMPOLINE_SIZE 2
 #define ___CLO_LOWLEVEL_TRAMPOLINE_SETUP(ptr,lbl) \
@@ -5426,57 +5620,75 @@ do { \
      ___WORD dist = ___CAST(___WORD, \
                             ___CAST(___UWORD,lbl) - \
                             (___CAST(___UWORD,ptr) + ___WS + ___tSUBTYPED + 5)); \
-     (ptr)[___LABEL_HOST_LABEL] = (0xe8L << (8*___tSUBTYPED)) \
-                                  + (dist << (8*(___tSUBTYPED+1))); \
-     (ptr)[___LABEL_HOST_LABEL+1] = (dist >> (8*(___WS-(___tSUBTYPED+1)))); \
+     (ptr)[___LABEL_LOWLEVEL_CODE] = (0xe8L << (8*___tSUBTYPED)) \
+                                     + (dist << (8*(___tSUBTYPED+1))); \
+     (ptr)[___LABEL_LOWLEVEL_CODE+1] = (dist >> (8*(___WS-(___tSUBTYPED+1)))); \
    } while (0)
 
 #define ___LABEL_LOWLEVEL_TRAMPOLINE_SIZE 1
 #define ___LABEL_LOWLEVEL_TRAMPOLINE_SETUP(ptr) \
 do { \
      /* generate x86-32 instruction: call *-4(%ecx) */ \
-     (ptr)[___LABEL_HOST_LABEL] = 0xfc51ff << (8*___tSUBTYPED); \
+     (ptr)[___LABEL_LOWLEVEL_CODE] = 0xfc51ff << (8*___tSUBTYPED); \
    } while (0)
 
-#else
-#ifdef ___CPU_x86_64
+#endif
 
-#define ___LABEL_SIZE 4
+#ifdef ___CPU_x86_64
 
 #define ___CLO_LOWLEVEL_TRAMPOLINE_SIZE 1
 #define ___CLO_LOWLEVEL_TRAMPOLINE_SETUP(ptr,lbl) \
 do { \
      /* generate x86-64 instruction: call *-15(%rip) */ \
-     (ptr)[___LABEL_HOST_LABEL] = 0xfffffff115ffL << (8*___tSUBTYPED); \
+     (ptr)[___LABEL_LOWLEVEL_CODE] = 0xfffffff115ffL << (8*___tSUBTYPED); \
    } while (0)
 
 #define ___LABEL_LOWLEVEL_TRAMPOLINE_SIZE 1
 #define ___LABEL_LOWLEVEL_TRAMPOLINE_SETUP(ptr) \
 do { \
      /* generate x86-64 instruction: call *-8(%rcx) */ \
-     (ptr)[___LABEL_HOST_LABEL] = 0xf851ff << (8*___tSUBTYPED); \
+     (ptr)[___LABEL_LOWLEVEL_CODE] = 0xf851ff << (8*___tSUBTYPED); \
    } while (0)
 
 #endif
-#endif
 
 #endif
 
-#ifndef ___LABEL_SIZE
-#define ___LABEL_SIZE 4
+#endif
+
+#ifdef ___CLO_LOWLEVEL_TRAMPOLINE_SIZE
+#ifdef ___SUPPORT_LABEL_VALUES
+#define ___UNALIGNED_LABEL_SIZE (4+___LABEL_LOWLEVEL_TRAMPOLINE_SIZE)
+#else
+#define ___UNALIGNED_LABEL_SIZE (3+___LABEL_LOWLEVEL_TRAMPOLINE_SIZE)
+#endif
+#else
+#define ___UNALIGNED_LABEL_SIZE 4
 #define ___CLO_LOWLEVEL_TRAMPOLINE_SIZE 0
 #define ___CLO_LOWLEVEL_TRAMPOLINE_SETUP(ptr,lbl)
 #endif
 
-#define ___ALLOC_CLO(n)(___BEGIN_ALLOC_SUBTYPED(___MAKE_HD_WORDS(n+(1+___CLO_LOWLEVEL_TRAMPOLINE_SIZE),___sPROCEDURE)),___END_ALLOC_SUBTYPED(n+(1+___CLO_LOWLEVEL_TRAMPOLINE_SIZE)),___GET_SUBTYPED(n+(1+___CLO_LOWLEVEL_TRAMPOLINE_SIZE)))
+#ifdef ___USE_ALIGNED_LABEL_SIZE
+#if ___UNALIGNED_LABEL_SIZE <= 4
+#define ___LABEL_SIZE 4
+#else
+#define ___LABEL_SIZE 8
+#endif
+#else
+#define ___LABEL_SIZE ___UNALIGNED_LABEL_SIZE
+#endif
+
+#define ___CLO_FREEVARS (1+___CLO_LOWLEVEL_TRAMPOLINE_SIZE)
+
+#define ___ALLOC_CLO(n)(___BEGIN_ALLOC_SUBTYPED(___MAKE_HD_WORDS(n+___CLO_FREEVARS,___sPROCEDURE)),___END_ALLOC_SUBTYPED(n+___CLO_FREEVARS),___GET_SUBTYPED(n+___CLO_FREEVARS))
 #define ___BEGIN_SETUP_CLO(n,clo,lbl) \
 {___WORD *___ptr=___BODY0_AS(clo,___tSUBTYPED); \
 ___ptr[___LABEL_ENTRY_OR_DESCR]=___LBL(lbl); \
 ___CLO_LOWLEVEL_TRAMPOLINE_SETUP(___ptr,___LBL(lbl));
-#define ___ADD_CLO_ELEM(i,val)___ptr[i+(1+___CLO_LOWLEVEL_TRAMPOLINE_SIZE)]=(val);
+#define ___ADD_CLO_ELEM(i,val)___ptr[i+___CLO_FREEVARS]=(val);
 #define ___END_SETUP_CLO(n) }
-#define ___CLO(x,y)___BODY_AS(x,___tSUBTYPED)[y+___CLO_LOWLEVEL_TRAMPOLINE_SIZE]
-#define ___SET_CLO(x,y,z)___BODY_AS(x,___tSUBTYPED)[y+___CLO_LOWLEVEL_TRAMPOLINE_SIZE]=z;
+#define ___CLO(x,y)___BODY_AS(x,___tSUBTYPED)[y+(___CLO_FREEVARS-1)]
+#define ___SET_CLO(x,y,z)___BODY_AS(x,___tSUBTYPED)[y+(___CLO_FREEVARS-1)]=z;
 
 #define ___CLOSURELENGTH(x)___FIX(___HD_FIELDS(___SUBTYPED_HEADER(x))-___CLO_LOWLEVEL_TRAMPOLINE_SIZE)
 #define ___CLOSURECODE(x)___CLO(x,-___CLO_LOWLEVEL_TRAMPOLINE_SIZE)
@@ -5646,7 +5858,7 @@ if (___EXPECT_FALSE(___POLL_TRIGGER)) \
 {___ps->temp1=___LBL(n); \
 ___ps->poll_location.file=__FILE__; \
 ___ps->poll_location.line=__LINE__; \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_stack_limit) \
+___JUMPEXTPRM(___NOTHING,___ps->handler_stack_limit) \
 }
 
 #else
@@ -5654,7 +5866,7 @@ ___JUMPEXTPRM(___NOTHING,___GSTATE->handler_stack_limit) \
 #define ___POLL(n)                    \
 if (___EXPECT_FALSE(___POLL_TRIGGER)) \
 {___ps->temp1=___LBL(n); \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_stack_limit) \
+___JUMPEXTPRM(___NOTHING,___ps->handler_stack_limit) \
 }
 
 #endif
@@ -5669,7 +5881,7 @@ if (___EXPECT_FALSE(___hp>___ps->heap_limit)) \
 {___ps->temp1=___LBL(n); \
 ___ps->check_heap_location.file=__FILE__; \
 ___ps->check_heap_location.line=__LINE__; \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_heap_limit) \
+___JUMPEXTPRM(___NOTHING,___ps->handler_heap_limit) \
 }
 
 #else
@@ -5677,13 +5889,13 @@ ___JUMPEXTPRM(___NOTHING,___GSTATE->handler_heap_limit) \
 #define ___CHECK_HEAP(n,m)                    \
 if (___EXPECT_FALSE(___hp>___ps->heap_limit)) \
 {___ps->temp1=___LBL(n); \
-___JUMPEXTPRM(___NOTHING,___GSTATE->handler_heap_limit) \
+___JUMPEXTPRM(___NOTHING,___ps->handler_heap_limit) \
 }
 
 #endif
 
 #define ___FORCE1(n,src) \
-if (___TYP((___temp=(src)))==___tSUBTYPED&&___SUBTYPE(___temp)==___FIX(___sPROMISE)){___ps->temp1=___LBL(n);___ps->temp2=___temp;___JUMPEXTPRM(___NOTHING,___GSTATE->handler_force);
+if (___TYP((___temp=(src)))==___tSUBTYPED&&___SUBTYPE(___temp)==___FIX(___sPROMISE)){___ps->temp1=___LBL(n);___ps->temp2=___temp;___JUMPEXTPRM(___NOTHING,___ps->handler_force);
 #define ___FORCE2 ___temp=___ps->temp2;}
 #define ___FORCE3 ___temp
 
@@ -6032,6 +6244,12 @@ ___LOCAL ___WORD id[]={___MAKE_HD((n<<___LWS),___sSTRUCTURE,___PERM)
 #define ___DEF_SUB_BOX(id,n) \
 ___LOCAL ___WORD id[]={___MAKE_HD((n<<___LWS),___sBOXVALUES,___PERM)
 
+#define ___DEF_SUB_SYM(id,name,hash) \
+___LOCAL ___WORD id[]={___MAKE_HD((___SYMBOL_SIZE<<___LWS),___sSYMBOL,___PERM),name,hash,___FAL,0 ___PADDING};
+
+#define ___DEF_SUB_KEY(id,name,hash) \
+___LOCAL ___WORD id[]={___MAKE_HD((___KEYWORD_SIZE<<___LWS),___sKEYWORD,___PERM),name,hash,___FAL ___PADDING};
+
 #define ___DEF_SUB_STR(id,n) \
 ___LOCAL ___WORD id[]={___MAKE_HD((n<<___LCS),___sSTRING,___PERM)
 
@@ -6309,34 +6527,6 @@ ___LOCAL ___WORD id[]={___MAKE_HD((((n+1)>>1)<<3),___sBIGNUM,___PERM)
 #define ___FRAME_SPACE(n)___ROUND_TO_MULT((n)+___FRAME_RESERVE,___FRAME_ALIGN)
 #define ___FRAME_RESERVE 3
 #define ___FRAME_ALIGN 4
-
-#if ___LABEL_SIZE == 4
-#define ___LBL_TAIL
-#else
-#if ___LABEL_SIZE == 5
-#define ___LBL_TAIL ,0
-#else
-#if ___LABEL_SIZE == 6
-#define ___LBL_TAIL ,0,0
-#else
-#if ___LABEL_SIZE == 7
-#define ___LBL_TAIL ,0,0,0
-#else
-#if ___LABEL_SIZE == 8
-#define ___LBL_TAIL ,0,0,0,0
-#endif
-#endif
-#endif
-#endif
-#endif
-
-#define ___BEGIN_LBL \
-___LOCAL ___label_struct ___lbltbl[]={
-#define ___DEF_LBL_INTRO(id,name,info,nlbls,cproc){___CAST_HOST_TO_FAKEHOST(___CAST(___host,cproc)),___MAKE_HD((nlbls<<___LWS),___sVECTOR,___PERM),info,___CAST_VOIDSTAR_TO_FAKEVOIDSTAR(name) ___LBL_TAIL}
-#define ___DEF_LBL_PROC(id,nbp,nbc){___CAST_HOST_TO_FAKEHOST(___SM(___MH_PROC,id)),___PRD(nbp,nbc),0,0 ___LBL_TAIL}
-#define ___DEF_LBL_RET(id,frm){___CAST_HOST_TO_FAKEHOST(___SM(___MH_PROC,id)),___MAKE_HD(0,___sRETURN,___PERM),frm,0 ___LBL_TAIL}
-
-#define ___END_LBL ___PADDING_LBL};
 
 #ifdef ___OFDCOUNT
 #define ___OFDTBL ___ofdtbl,sizeof(___ofdtbl)/sizeof(___WORD)
@@ -7123,7 +7313,7 @@ ___HIDDEN ___SCMOBJ id \
 void *___x;) \
 { ___DELETE_TYPE(name,___x); return ___FIX(___NO_ERR); }
 
-#define ___CFUN_CONV_ERROR if ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___LBL(0);___JUMPEXTPRM(___SET_NARGS(___NARGS),___GSTATE->handler_cfun_conv_error;)}
+#define ___CFUN_CONV_ERROR if ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___LBL(0);___JUMPEXTPRM(___SET_NARGS(___NARGS),___ps->handler_cfun_conv_error;)}
 
 #define ___STOC3(f,s,c,i)___err=___EXT(f)(___PSP s,c,i)
 #define ___STOC4(f,s,c,t,i)___err=___EXT(f)(___PSP s,c,t,i)
@@ -7140,19 +7330,19 @@ void *___x;) \
 #define ___BEGIN_SFUN_VOID(proc) ___processor_state ___ps=___PSTATE;___SCMOBJ ___marker;___SCMOBJ ___err;___SCMOBJ ___errmsg=___FAL;if ((___err=___EXT(___make_sfun_stack_marker) (___ps,&___marker,proc))==___FIX(___NO_ERR)) {
 #define ___SFUN_CALL_VOID ___err=___EXT(___call) (___PSP ___NARGS,___FIELD(___marker,0),___marker);
 #define ___SFUN_SET_RESULT_VOID /* no result to set */
-#define ___SFUN_ERROR_VOID while ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___marker;___err=___EXT(___call) (___PSP 0,___GSTATE->handler_sfun_conv_error,___marker);
+#define ___SFUN_ERROR_VOID while ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___marker;___err=___EXT(___call) (___PSP 0,___ps->handler_sfun_conv_error,___marker);
 #define ___END_SFUN_VOID } ___EXT(___kill_sfun_stack_marker) (___marker); } ___EXT(___propagate_error) (___PSP ___err);
 
 #define ___BEGIN_SFUN_SCMOBJ(proc) ___processor_state ___ps=___PSTATE;___SCMOBJ ___marker;___SCMOBJ ___result;___SCMOBJ ___err;___SCMOBJ ___errmsg=___FAL;if ((___err=___EXT(___make_sfun_stack_marker) (___ps,&___marker,proc))==___FIX(___NO_ERR)) {
 #define ___SFUN_CALL_SCMOBJ ___err=___EXT(___call) (___PSP ___NARGS,___FIELD(___marker,0),___marker);
 #define ___SFUN_SET_RESULT_SCMOBJ ___result = ___SFUN_RESULT;
-#define ___SFUN_ERROR_SCMOBJ while ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___marker;___err=___EXT(___call) (___PSP 0,___GSTATE->handler_sfun_conv_error,___marker);
+#define ___SFUN_ERROR_SCMOBJ while ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___marker;___err=___EXT(___call) (___PSP 0,___ps->handler_sfun_conv_error,___marker);
 #define ___END_SFUN_SCMOBJ } ___EXT(___kill_sfun_stack_marker) (___marker); } ___EXT(___propagate_error) (___PSP ___err);
 
 #define ___BEGIN_SFUN(proc,decl)___processor_state ___ps=___PSTATE;___SCMOBJ ___marker;decl;___SCMOBJ ___err;___SCMOBJ ___errmsg=___FAL;if ((___err=___EXT(___make_sfun_stack_marker) (___ps,&___marker,proc))==___FIX(___NO_ERR)) {
 #define ___SFUN_CALL if ((___err=___EXT(___call) (___PSP ___NARGS,___FIELD(___marker,0),___marker))==___FIX(___NO_ERR))
 #define ___SFUN_SET_RESULT /* done in conversion function */
-#define ___SFUN_ERROR while ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___marker;if ((___err=___EXT(___call) (___PSP 0,___GSTATE->handler_sfun_conv_error,___marker))==___FIX(___NO_ERR))
+#define ___SFUN_ERROR while ((___err!=___FIX(___NO_ERR))&&(___err!=___FIX(___UNWIND_C_STACK))) {___ps->temp1=___err;___ps->temp2=___errmsg;___ps->temp3=___marker;if ((___err=___EXT(___call) (___PSP 0,___ps->handler_sfun_conv_error,___marker))==___FIX(___NO_ERR))
 #define ___END_SFUN } ___EXT(___kill_sfun_stack_marker) (___marker); } ___EXT(___propagate_error) (___PSP ___err);
 
 #define ___BEGIN_SFUN_ARG(i,arg)___SCMOBJ arg;
@@ -8641,7 +8831,25 @@ typedef struct ___processor_state_struct
     ___WORD r[___NB_GVM_REGS];
 
     ___WORD pc;
-    int na;
+    ___WORD na;
+
+    /* these handlers are duplicated from the global state for quick access */
+
+    ___WORD handler_sfun_conv_error;
+    ___WORD handler_cfun_conv_error;
+    ___WORD handler_stack_limit;
+    ___WORD handler_heap_limit;
+    ___WORD handler_not_proc;
+    ___WORD handler_not_proc_glo;
+    ___WORD handler_wrong_nargs;
+    ___WORD handler_get_rest;
+    ___WORD handler_get_key;
+    ___WORD handler_get_key_rest;
+    ___WORD handler_force;
+    ___WORD handler_return_to_c;
+    ___WORD handler_break;
+    ___WORD internal_return;
+    ___WORD dynamic_env_bind_return;
 
     ___WORD temp1;
     ___WORD temp2;
@@ -8714,8 +8922,8 @@ typedef struct ___processor_state_struct
 
 typedef struct ___lowlevel_processor_state_struct
   {
-    ___WORD *lowlevel_leave_sp;
-    ___WORD *lowlevel_leave_handler;
+    ___WORD *return_sp;
+    ___WORD *return_handler;
   } ___lowlevel_processor_state_struct;
 
 typedef struct ___aligned_lowlevel_processor_state_struct
@@ -8761,27 +8969,98 @@ typedef ___WORD (*___host) ___P((___processor_state ___ps),());
 
 typedef struct ___label_struct
   {
-    ___FAKEHOST host;
-    ___WORD header;
-    ___WORD entry_or_descr;
+#ifdef ___SUPPORT_LABEL_VALUES
     ___FAKEVOIDSTAR host_label;
-#if ___LABEL_SIZE > 4
-    ___WORD dummy[___LABEL_SIZE-4];
+#define ___LABEL_HOST_LABEL (-3)
+#define ___LABEL_HOST_LABEL_GET(lbl) \
+*___CAST(___FAKEVOIDSTAR*,___SUBTYPED_TO(lbl,___LABEL_HOST_LABEL))
+#define ___LABEL_HOST_LABEL_SET(lbl,hlbl) \
+___LABEL_HOST_LABEL_GET(lbl) = hlbl
+#define ___LABEL_PLACEHOLDER1(x) x,
+#define ___LABEL_PLACEHOLDER2(x)
+#define ___LABEL_NAME ___LABEL_HOST_LABEL
+#define ___LABEL_START_TO_BODY 3
+#else
+#define ___LABEL_PLACEHOLDER1(x)
+#define ___LABEL_PLACEHOLDER2(x) ,x
+#define ___LABEL_NAME (___LABEL_ENTRY_OR_DESCR+1)
+#define ___LABEL_START_TO_BODY 2
+#endif
+#define ___LABEL_NAME_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_NAME)
+#define ___LABEL_NAME_SET(lbl, val) ___LABEL_NAME_GET(lbl) = val
+
+    ___FAKEHOST host;
+#define ___LABEL_HOST (-2)
+#define ___LABEL_HOST_GET(lbl) \
+(*___CAST(___FAKEHOST*,___SUBTYPED_TO(lbl,___LABEL_HOST)))
+
+    ___WORD header;
+
+    ___WORD entry_or_descr;
+#define ___LABEL_ENTRY_OR_DESCR 0
+#define ___LABEL_INFO ___LABEL_ENTRY_OR_DESCR
+#define ___LABEL_ENTRY_GET(lbl) *___SUBTYPED_TO(lbl,___LABEL_ENTRY_OR_DESCR)
+#define ___LABEL_ENTRY_SET(lbl, val) ___LABEL_ENTRY_GET(lbl) = val
+#define ___LABEL_DESCR_GET(lbl) ___LABEL_ENTRY_GET(lbl)
+#define ___LABEL_DESCR_SET(lbl, val) ___LABEL_ENTRY_SET(lbl, val)
+#define ___LABEL_INFO_GET(lbl) ___LABEL_ENTRY_GET(lbl)
+#define ___LABEL_INFO_SET(lbl, val) ___LABEL_ENTRY_SET(lbl, val)
+
+#if ___LABEL_SIZE - ___LABEL_START_TO_BODY - 1 > 0
+    ___FAKEVOIDSTAR padding[___LABEL_SIZE - ___LABEL_START_TO_BODY - 1];
 #endif
   } ___label_struct;
 
-#define ___LABEL_ENTRY_OR_DESCR 0
-#define ___LABEL_HOST_LABEL     1
-#define ___LABEL_HOST           -2
+#if ___LABEL_SIZE == 4
+#define ___LABEL_ZERO_FILL
+#else
+#if ___LABEL_SIZE == 5
+#define ___LABEL_ZERO_FILL ,0
+#else
+#if ___LABEL_SIZE == 6
+#define ___LABEL_ZERO_FILL ,0,0
+#else
+#if ___LABEL_SIZE == 7
+#define ___LABEL_ZERO_FILL ,0,0,0
+#else
+#define ___LABEL_ZERO_FILL ,0,0,0,0
+#endif
+#endif
+#endif
+#endif
 
-#define ___LABEL_ENTRY_GET(lbl) \
-(*___CAST(___WORD*,___SUBTYPED_TO(lbl,___LABEL_ENTRY_OR_DESCR)))
-#define ___LABEL_DESCR_GET(lbl) \
-(*___CAST(___WORD*,___SUBTYPED_TO(lbl,___LABEL_ENTRY_OR_DESCR)))
-#define ___LABEL_HOST_LABEL_GET(lbl) \
-(*___CAST(___FAKEVOIDSTAR*,___SUBTYPED_TO(lbl,___LABEL_HOST_LABEL)))
-#define ___LABEL_HOST_GET(lbl) \
-(*___CAST(___FAKEHOST*,___SUBTYPED_TO(lbl,___LABEL_HOST)))
+#define ___BEGIN_LBL \
+___LOCAL ___label_struct ___lbltbl[]={
+
+#define ___DEF_LBL_INTRO(id,name,info,nlbls,cproc) \
+{ ___LABEL_PLACEHOLDER1(___CAST_VOIDSTAR_TO_FAKEVOIDSTAR(name)) \
+  ___CAST_HOST_TO_FAKEHOST(___CAST(___host,cproc)), \
+  ___MAKE_HD((nlbls<<___LWS),___sVECTOR,___PERM), \
+  info \
+  ___LABEL_PLACEHOLDER2(___CAST_VOIDSTAR_TO_FAKEVOIDSTAR(name)) \
+  ___LABEL_ZERO_FILL \
+}
+
+#define ___DEF_LBL_PROC(id,nbp,nbc) \
+{ ___LABEL_PLACEHOLDER1(0) \
+  ___CAST_HOST_TO_FAKEHOST(___SM(___MH_PROC,id)), \
+  ___PRD(nbp,nbc), \
+  0 \
+  ___LABEL_PLACEHOLDER2(0) \
+  ___LABEL_ZERO_FILL \
+}
+
+#define ___DEF_LBL_RET(id,frm) \
+{ ___LABEL_PLACEHOLDER1(0) \
+  ___CAST_HOST_TO_FAKEHOST(___SM(___MH_PROC,id)), \
+  ___MAKE_HD(0,___sRETURN,___PERM), \
+  frm \
+  ___LABEL_PLACEHOLDER2(0) \
+  ___LABEL_ZERO_FILL \
+}
+
+#define ___END_LBL \
+___PADDING_LBL};
 
 /* Module structure */
 
@@ -9002,6 +9281,8 @@ typedef struct ___global_state_struct
     int setup_state; /* 0=pre-setup, 1=post-setup, 2=post-cleanup */
 
     ___setup_params_struct setup_params; /* params received by ___setup */
+
+    /* these handlers are duplicated in the processor state for quick access */
 
     ___WORD handler_sfun_conv_error;
     ___WORD handler_cfun_conv_error;
@@ -10204,7 +10485,7 @@ typedef struct ___global_state_struct
     ___program_startup_info_struct *(*___get_program_startup_info) ___PVOID;
     ___SCMOBJ (*___call)
        ___P((___PSD
-             int nargs,
+             ___WORD nargs,
              ___SCMOBJ proc,
              ___SCMOBJ marker),
             ());
@@ -10217,6 +10498,12 @@ typedef struct ___global_state_struct
        ___P((___processor_state ___ps),
             ());
 #endif
+    ___SCMOBJ (*___machine_code_block_fixup)
+       ___P((___processor_state ___ps,
+             void *mcb,
+             ___SCMOBJ fixup_locs,
+             ___SCMOBJ fixup_objs),
+            ());
     void (*___throw_error)
        ___P((___PSD
              ___SCMOBJ err),
@@ -11596,7 +11883,7 @@ ___IMP_FUNC(___program_startup_info_struct*,___get_program_startup_info)
    ___PVOID;
 ___IMP_FUNC(___SCMOBJ,___call)
    ___P((___PSD
-         int nargs,
+         ___WORD nargs,
          ___SCMOBJ proc,
          ___SCMOBJ marker),
         ());
@@ -11608,6 +11895,12 @@ ___IMP_FUNC(___WORD,___lowlevel_exec)
    ___P((___processor_state ___ps),
         ());
 #endif
+___IMP_FUNC(___SCMOBJ,___machine_code_block_fixup)
+   ___P((___processor_state ___ps,
+         void *mcb,
+         ___SCMOBJ fixup_locs,
+         ___SCMOBJ fixup_objs),
+        ());
 ___IMP_FUNC(void,___throw_error)
    ___P((___PSD
          ___SCMOBJ err),

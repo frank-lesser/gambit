@@ -112,6 +112,7 @@
 (define warnings-sym           (string->canonical-symbol "warnings"))
 
 (define interrupts-enabled-sym (string->canonical-symbol "interrupts-enabled"))
+(define poll-on-return-sym     (string->canonical-symbol "poll-on-return"))
 
 (define debug-sym              (string->canonical-symbol "debug"))
 (define debug-location-sym     (string->canonical-symbol "debug-location"))
@@ -551,7 +552,7 @@
 
 ;; Gambit system version numbers.
 
-(define (compiler-version) 408009) ;; 100000*major + 1000*minor + revision
+(define (compiler-version) 409000) ;; 100000*major + 1000*minor + revision
 
 (define compiler-version-string-prefix "v")
 (define compiler-version-string-suffix "")
