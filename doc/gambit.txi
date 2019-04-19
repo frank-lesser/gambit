@@ -4365,6 +4365,24 @@ For example:
 @deffn procedure timeout->time @var{timeout}
 @end deffn
 
+@deffn procedure current-second
+@end deffn
+
+@deffn procedure current-jiffy
+@end deffn
+
+@deffn procedure jiffies-per-second
+@end deffn
+
+@deffn procedure get-environment-variable @var{name}
+@end deffn
+
+@deffn procedure get-environment-variables
+@end deffn
+
+@deffn procedure executable-path
+@end deffn
+
 @deffn procedure open-dummy
 @end deffn
 
@@ -4482,6 +4500,49 @@ For example:
 @end deffn
 
 @deffn {special form} define-cond-expand-feature @var{ident} @dots{}
+@end deffn
+
+@deffn {special form} case-lambda @dots{}
+@end deffn
+
+@deffn procedure list-set @var{list} @var{k} @var{val}
+@deffnx procedure list-set! @var{list} @var{k} @var{val}
+@end deffn
+
+@deffn procedure fold @var{proc} @var{base} @var{list} @dots{}
+@deffnx procedure fold-right @var{proc} @var{base} @var{list} @dots{}
+@end deffn
+
+@deffn procedure iota @var{count} @r{[}@var{start} @r{[}@var{step}@r{]}@r{]}
+@end deffn
+
+@deffn procedure circular-list @var{x} @var{y}@dots{}
+@end deffn
+
+@deffn procedure cons* @var{x} @var{y}@dots{}
+@end deffn
+
+@deffn procedure list-copy @var{list}
+@end deffn
+
+@deffn procedure list-tabulate @var{n} @var{init-proc}
+@end deffn
+
+@deffn procedure make-list @var{n} @r{[}@var{fill}@r{]}
+@end deffn
+
+@deffn procedure reverse! @var{list}
+@end deffn
+
+@deffn procedure xcons @var{d} @var{a}
+@end deffn
+
+@deffn procedure take @var{x} @var{i}
+@deffnx procedure drop @var{x} @var{i}
+@end deffn
+
+@deffn procedure last @var{pair}
+@deffnx procedure last-pair @var{pair}
 @end deffn
 
 @deffn procedure finite? @var{x}
@@ -5280,6 +5341,9 @@ For example:
 @deffn procedure flexpt @var{x} @var{y}
 @end deffn
 
+@deffn procedure flhypot @var{x} @var{y}
+@end deffn
+
 @deffn procedure flfinite? @var{x}
 @end deffn
 
@@ -5637,10 +5701,11 @@ homogeneous vector types.
 @deffnx procedure s8vector @var{exact-int8}@dots{}
 @deffnx procedure s8vector-length @var{s8vector}
 @deffnx procedure s8vector-ref @var{s8vector} @var{k}
+@deffnx procedure s8vector-set @var{s8vector} @var{k} @var{exact-int8}
 @deffnx procedure s8vector-set! @var{s8vector} @var{k} @var{exact-int8}
 @deffnx procedure s8vector->list @var{s8vector}
 @deffnx procedure list->s8vector @var{list-of-exact-int8}
-@deffnx procedure s8vector-fill! @var{s8vector} @var{fill}
+@deffnx procedure s8vector-fill! @var{s8vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subs8vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-s8vectors @var{lst}
 @deffnx procedure s8vector-copy @var{s8vector}
@@ -5655,10 +5720,11 @@ homogeneous vector types.
 @deffnx procedure u8vector @var{exact-int8}@dots{}
 @deffnx procedure u8vector-length @var{u8vector}
 @deffnx procedure u8vector-ref @var{u8vector} @var{k}
+@deffnx procedure u8vector-set @var{u8vector} @var{k} @var{exact-int8}
 @deffnx procedure u8vector-set! @var{u8vector} @var{k} @var{exact-int8}
 @deffnx procedure u8vector->list @var{u8vector}
 @deffnx procedure list->u8vector @var{list-of-exact-int8}
-@deffnx procedure u8vector-fill! @var{u8vector} @var{fill}
+@deffnx procedure u8vector-fill! @var{u8vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subu8vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-u8vectors @var{lst}
 @deffnx procedure u8vector-copy @var{u8vector}
@@ -5673,10 +5739,11 @@ homogeneous vector types.
 @deffnx procedure s16vector @var{exact-int16}@dots{}
 @deffnx procedure s16vector-length @var{s16vector}
 @deffnx procedure s16vector-ref @var{s16vector} @var{k}
+@deffnx procedure s16vector-set @var{s16vector} @var{k} @var{exact-int16}
 @deffnx procedure s16vector-set! @var{s16vector} @var{k} @var{exact-int16}
 @deffnx procedure s16vector->list @var{s16vector}
 @deffnx procedure list->s16vector @var{list-of-exact-int16}
-@deffnx procedure s16vector-fill! @var{s16vector} @var{fill}
+@deffnx procedure s16vector-fill! @var{s16vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subs16vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-s16vectors @var{lst}
 @deffnx procedure s16vector-copy @var{s16vector}
@@ -5691,10 +5758,11 @@ homogeneous vector types.
 @deffnx procedure u16vector @var{exact-int16}@dots{}
 @deffnx procedure u16vector-length @var{u16vector}
 @deffnx procedure u16vector-ref @var{u16vector} @var{k}
+@deffnx procedure u16vector-set @var{u16vector} @var{k} @var{exact-int16}
 @deffnx procedure u16vector-set! @var{u16vector} @var{k} @var{exact-int16}
 @deffnx procedure u16vector->list @var{u16vector}
 @deffnx procedure list->u16vector @var{list-of-exact-int16}
-@deffnx procedure u16vector-fill! @var{u16vector} @var{fill}
+@deffnx procedure u16vector-fill! @var{u16vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subu16vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-u16vectors @var{lst}
 @deffnx procedure u16vector-copy @var{u16vector}
@@ -5709,10 +5777,11 @@ homogeneous vector types.
 @deffnx procedure s32vector @var{exact-int32}@dots{}
 @deffnx procedure s32vector-length @var{s32vector}
 @deffnx procedure s32vector-ref @var{s32vector} @var{k}
+@deffnx procedure s32vector-set @var{s32vector} @var{k} @var{exact-int32}
 @deffnx procedure s32vector-set! @var{s32vector} @var{k} @var{exact-int32}
 @deffnx procedure s32vector->list @var{s32vector}
 @deffnx procedure list->s32vector @var{list-of-exact-int32}
-@deffnx procedure s32vector-fill! @var{s32vector} @var{fill}
+@deffnx procedure s32vector-fill! @var{s32vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subs32vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-s32vectors @var{lst}
 @deffnx procedure s32vector-copy @var{s32vector}
@@ -5727,10 +5796,11 @@ homogeneous vector types.
 @deffnx procedure u32vector @var{exact-int32}@dots{}
 @deffnx procedure u32vector-length @var{u32vector}
 @deffnx procedure u32vector-ref @var{u32vector} @var{k}
+@deffnx procedure u32vector-set @var{u32vector} @var{k} @var{exact-int32}
 @deffnx procedure u32vector-set! @var{u32vector} @var{k} @var{exact-int32}
 @deffnx procedure u32vector->list @var{u32vector}
 @deffnx procedure list->u32vector @var{list-of-exact-int32}
-@deffnx procedure u32vector-fill! @var{u32vector} @var{fill}
+@deffnx procedure u32vector-fill! @var{u32vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subu32vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-u32vectors @var{lst}
 @deffnx procedure u32vector-copy @var{u32vector}
@@ -5745,10 +5815,11 @@ homogeneous vector types.
 @deffnx procedure s64vector @var{exact-int64}@dots{}
 @deffnx procedure s64vector-length @var{s64vector}
 @deffnx procedure s64vector-ref @var{s64vector} @var{k}
+@deffnx procedure s64vector-set @var{s64vector} @var{k} @var{exact-int64}
 @deffnx procedure s64vector-set! @var{s64vector} @var{k} @var{exact-int64}
 @deffnx procedure s64vector->list @var{s64vector}
 @deffnx procedure list->s64vector @var{list-of-exact-int64}
-@deffnx procedure s64vector-fill! @var{s64vector} @var{fill}
+@deffnx procedure s64vector-fill! @var{s64vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subs64vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-s64vectors @var{lst}
 @deffnx procedure s64vector-copy @var{s64vector}
@@ -5763,10 +5834,11 @@ homogeneous vector types.
 @deffnx procedure u64vector @var{exact-int64}@dots{}
 @deffnx procedure u64vector-length @var{u64vector}
 @deffnx procedure u64vector-ref @var{u64vector} @var{k}
+@deffnx procedure u64vector-set @var{u64vector} @var{k} @var{exact-int64}
 @deffnx procedure u64vector-set! @var{u64vector} @var{k} @var{exact-int64}
 @deffnx procedure u64vector->list @var{u64vector}
 @deffnx procedure list->u64vector @var{list-of-exact-int64}
-@deffnx procedure u64vector-fill! @var{u64vector} @var{fill}
+@deffnx procedure u64vector-fill! @var{u64vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subu64vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-u64vectors @var{lst}
 @deffnx procedure u64vector-copy @var{u64vector}
@@ -5781,10 +5853,11 @@ homogeneous vector types.
 @deffnx procedure f32vector @var{inexact-real}@dots{}
 @deffnx procedure f32vector-length @var{f32vector}
 @deffnx procedure f32vector-ref @var{f32vector} @var{k}
+@deffnx procedure f32vector-set @var{f32vector} @var{k} @var{inexact-real}
 @deffnx procedure f32vector-set! @var{f32vector} @var{k} @var{inexact-real}
 @deffnx procedure f32vector->list @var{f32vector}
 @deffnx procedure list->f32vector @var{list-of-inexact-real}
-@deffnx procedure f32vector-fill! @var{f32vector} @var{fill}
+@deffnx procedure f32vector-fill! @var{f32vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subf32vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-f32vectors @var{lst}
 @deffnx procedure f32vector-copy @var{f32vector}
@@ -5799,10 +5872,11 @@ homogeneous vector types.
 @deffnx procedure f64vector @var{inexact-real}@dots{}
 @deffnx procedure f64vector-length @var{f64vector}
 @deffnx procedure f64vector-ref @var{f64vector} @var{k}
+@deffnx procedure f64vector-set @var{f64vector} @var{k} @var{inexact-real}
 @deffnx procedure f64vector-set! @var{f64vector} @var{k} @var{inexact-real}
 @deffnx procedure f64vector->list @var{f64vector}
 @deffnx procedure list->f64vector @var{list-of-inexact-real}
-@deffnx procedure f64vector-fill! @var{f64vector} @var{fill}
+@deffnx procedure f64vector-fill! @var{f64vector} @var{fill} @r{[}@var{start} @r{[}@var{end}@r{]}@r{]}
 @deffnx procedure subf64vector-fill! @var{vector} @var{start} @var{end} @var{fill}
 @deffnx procedure append-f64vectors @var{lst}
 @deffnx procedure f64vector-copy @var{f64vector}
@@ -10029,7 +10103,8 @@ For example under Windows:
 
 The procedure @code{exit} causes the process to terminate with the
 status @var{status} which must be an exact integer in the range 0 to
-255.  If it is not specified, @var{status} defaults to 0.
+255 or @code{#f}.  If it is not specified, @var{status} defaults to 0.
+When @var{status} is @code{#f} the process terminates with an error status.
 
 For example under UNIX:
 
@@ -10037,9 +10112,9 @@ For example under UNIX:
 $ @b{gsi}
 Gambit @value{VERSION}
 
-> @b{(exit 42)}
+> @b{(exit #f)}
 $ @b{echo $?}
-42
+70
 @end smallexample
 
 @end deffn
@@ -11781,7 +11856,6 @@ For example:
 
 @smallexample
 > @b{(call-with-output-string
-    '()
     (lambda (p)
       (display "abc\n123def" p)
       (write (list (output-port-line p) (output-port-column p))
@@ -12212,7 +12286,7 @@ defaults to the current output-port.
 For example:
 
 @smallexample
-> @b{(call-with-output-u8vector '() (lambda (p) (write-u8 33 p)))}
+> @b{(call-with-output-u8vector (lambda (p) (write-u8 33 p)))}
 #u8(33)
 @end smallexample
 
@@ -13397,9 +13471,9 @@ For example:
 @deffnx procedure open-input-vector @r{[}@var{vector-or-settings}@r{]}
 @deffnx procedure open-output-vector @r{[}@var{vector-or-settings}@r{]}
 @deffnx procedure call-with-input-vector @var{vector-or-settings} @var{proc}
-@deffnx procedure call-with-output-vector @var{vector-or-settings} @var{proc}
+@deffnx procedure call-with-output-vector @r{[}@var{vector-or-settings@r{]}} @var{proc}
 @deffnx procedure with-input-from-vector @var{vector-or-settings} @var{thunk}
-@deffnx procedure with-output-to-vector @var{vector-or-settings} @var{thunk}
+@deffnx procedure with-output-to-vector @r{[}@var{vector-or-settings}@r{]} @var{thunk}
 
 Vector-ports represent streams of Scheme objects.  They are a direct
 subtype of object-ports (i.e. they are not character-ports).  All of
@@ -13433,12 +13507,14 @@ respectively.  The procedures @code{call-with-output-vector} and
 @code{with-output-to-vector} return the vector accumulated in the port
 (see @code{get-output-vector}).
 
-The first parameter of these procedures is either a vector of the
-elements used to initialize the stream or a list of port settings.  If
-it is not specified, the parameter of the @code{open-vector},
-@code{open-input-vector}, and @code{open-output-vector} procedures
-defaults to an empty list of port settings.  Here are the settings
-allowed in addition to the generic settings of object-ports:
+The @var{vector-or-settings} parameter of these procedures is either a
+vector of the elements used to initialize the stream or a list of port
+settings.  If it is not specified, the parameter of the
+@code{open-vector}, @code{open-input-vector},
+@code{open-output-vector}, @code{with-output-to-vector}, and
+@code{call-with-output-vector} procedures defaults to an empty list of
+port settings.  Here are the settings allowed in addition to the
+generic settings of object-ports:
 
 @itemize
 
@@ -13479,7 +13555,7 @@ For example:
 3
 > @b{(read p)}
 #!eof
-> @b{(with-output-to-vector '() (lambda () (write 1) (write 2)))}
+> @b{(with-output-to-vector (lambda () (write 1) (write 2)))}
 #(1 2)
 @end smallexample
 
@@ -13563,9 +13639,9 @@ For example:
 @deffnx procedure open-input-string @r{[}@var{string-or-settings}@r{]}
 @deffnx procedure open-output-string @r{[}@var{string-or-settings}@r{]}
 @deffnx procedure call-with-input-string @var{string-or-settings} @var{proc}
-@deffnx procedure call-with-output-string @var{string-or-settings} @var{proc}
+@deffnx procedure call-with-output-string @r{[}@var{string-or-settings}@r{]} @var{proc}
 @deffnx procedure with-input-from-string @var{string-or-settings} @var{thunk}
-@deffnx procedure with-output-to-string @var{string-or-settings} @var{thunk}
+@deffnx procedure with-output-to-string @r{[}@var{string-or-settings}@r{]} @var{thunk}
 @deffnx procedure open-string-pipe @r{[}@var{string-or-settings1} @r{[}@var{string-or-settings2}@r{]}@r{]}
 @deffnx procedure get-output-string @var{string-port}
 
@@ -13592,7 +13668,7 @@ For example:
 #\3
 > @b{(read-char p)}
 #!eof
-> @b{(with-output-to-string '() (lambda () (write 1) (write 2)))}
+> @b{(with-output-to-string (lambda () (write 1) (write 2)))}
 "12"
 @end smallexample
 
@@ -13627,9 +13703,9 @@ For example:
 @deffnx procedure open-input-u8vector @r{[}@var{u8vector-or-settings}@r{]}
 @deffnx procedure open-output-u8vector @r{[}@var{u8vector-or-settings}@r{]}
 @deffnx procedure call-with-input-u8vector @var{u8vector-or-settings} @var{proc}
-@deffnx procedure call-with-output-u8vector @var{u8vector-or-settings} @var{proc}
+@deffnx procedure call-with-output-u8vector @r{[}@var{u8vector-or-settings}@r{]} @var{proc}
 @deffnx procedure with-input-from-u8vector @var{u8vector-or-settings} @var{thunk}
-@deffnx procedure with-output-to-u8vector @var{u8vector-or-settings} @var{thunk}
+@deffnx procedure with-output-to-u8vector @r{[}@var{u8vector-or-settings}@r{]} @var{thunk}
 @deffnx procedure open-u8vector-pipe @r{[}@var{u8vector-or-settings1} @r{[}@var{u8vector-or-settings2}@r{]}@r{]}
 @deffnx procedure get-output-u8vector @var{u8vector-port}
 
@@ -13654,7 +13730,7 @@ For example:
 51
 > @b{(read-u8 p)}
 #!eof
-> @b{(with-output-to-u8vector '() (lambda () (write 1) (write 2)))}
+> @b{(with-output-to-u8vector (lambda () (write 1) (write 2)))}
 #u8(49 50)
 @end smallexample
 
@@ -13767,14 +13843,14 @@ For example:
 The procedure @code{readtable-case-conversion?} returns the content of
 the @samp{case-conversion?} field of @var{readtable}.  When the
 content of this field is @code{#f}, the reader preserves the case of
-symbols and keyword objects that are read (i.e. @code{Ice} and
+symbols, keyword and named characters that are read (i.e. @code{Ice} and
 @code{ice} are distinct symbols).  When the content of this field is
-the symbol @code{upcase}, the reader converts lowercase letters to
-uppercase when reading symbols and keywords (i.e. @code{Ice} is read
+the symbol @code{upcase}, the reader converts to
+uppercase (i.e. @code{Ice} is read
 as the symbol @code{(string->symbol "ICE")}).  Otherwise the reader
-converts uppercase letters to lowercase when reading symbols and
-keywords (i.e. @code{Ice} is read as the symbol @code{(string->symbol
-"ice")}).
+converts using @code{string-foldcase}, which for many letters
+converts them to lowercase
+(i.e. @code{Ice} is read as the symbol @code{(string->symbol "ice")}).
 
 The procedure @code{readtable-case-conversion?-set} returns a copy
 of @var{readtable} where only the @samp{case-conversion?} field
@@ -13868,14 +13944,24 @@ For example:
 The procedure @code{readtable-sharing-allowed?} returns the content of
 the @samp{sharing-allowed?} field of @var{readtable}.  The reader
 recognizes the @code{#@var{n}#} and @code{#@var{n}=@var{datum}}
-notation for circular structures and the printer uses this notation if
-and only if the content of the @samp{sharing-allowed?} field is not
-@code{#f}.  Moreover when the content of the @samp{sharing-allowed?}
-field is the symbol @code{serialize}, the printer uses a special
-external representation that the reader understands and that extends
-write/read invariance to the following types: records, procedures and
-continuations.  Note that an object can be serialized and deserialized
-if and only if all of its components are serializable.
+notation for shared and circular structures and the printer uses this
+notation depending on the content of the @samp{sharing-allowed?} field
+and the printing primitive used.  When the content of the
+@samp{sharing-allowed?} field is the symbol @code{default}, the
+procedure @code{write-shared} will use this notation for shared and
+circular structures, the procedures @code{write}, @code{display},
+@code{pp}, @code{pretty-print}, @code{print}, and @code{println} will
+use this notation for circular structures, and the procedure
+@code{write-simple} does not use this notation.  When the content
+of the @samp{sharing-allowed?} field is @code{#f}, the printing procedures
+will not use this notation. When the content of the @samp{sharing-allowed?}
+field is @code{#t}, the printing procedures will use this notation
+for shared and circular structures.  Finally, when the content of the
+@samp{sharing-allowed?} field is the symbol @code{serialize}, the printer
+uses a special external representation that the reader understands and
+that extends write/read invariance to the following types: records,
+procedures and continuations.  Note that an object can be serialized and
+deserialized if and only if all of its components are serializable.
 
 The procedure @code{readtable-sharing-allowed?-set} returns a copy
 of @var{readtable} where only the @samp{sharing-allowed?} field
@@ -13886,7 +13972,6 @@ Here is a simple example:
 @smallexample
 > @b{(define (wr obj allow?)
     (call-with-output-string
-      '()
       (lambda (p)
         (output-port-readtable-set!
           p
@@ -13957,7 +14042,6 @@ Here is an example where continuations are serialized:
 @smallexample
 > @b{(define (wr obj)
     (call-with-output-string
-     '()
      (lambda (p)
        (output-port-readtable-set!
         p
@@ -14117,7 +14201,6 @@ For example:
 @smallexample
 > @b{(define (wr obj n)
     (call-with-output-string
-      '()
       (lambda (p)
         (output-port-readtable-set!
           p
@@ -14156,7 +14239,6 @@ For example:
 @smallexample
 > @b{(define (wr obj n)
     (call-with-output-string
-      '()
       (lambda (p)
         (output-port-readtable-set!
           p

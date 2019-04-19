@@ -4373,12 +4373,16 @@
 
 ;;; User accessible primitives for time objects.
 
+(##define-macro (macro-current-time-point)
+  `(begin
+     (macro-update-current-time!)
+     (macro-current-time (macro-thread-floats (macro-current-processor)))))
+
 (define-prim (##current-time-point)
-  (macro-update-current-time!)
-  (macro-current-time (macro-thread-floats (macro-current-processor))))
+  (macro-current-time-point))
 
 (define-prim (current-time)
-  (macro-make-time (##current-time-point) #f #f #f))
+  (macro-make-time (macro-current-time-point) #f #f #f))
 
 (define-prim (time? obj)
   (macro-time? obj))
@@ -4396,6 +4400,16 @@
 (define-prim (timeout->time absrel-timeout)
   (macro-force-vars (absrel-timeout)
     (##timeout->time absrel-timeout)))
+
+(define-prim (current-second)
+  (macro-current-time-point))
+
+(define-prim (current-jiffy)
+  (macro-update-current-time!)
+  (##inexact->exact (##flround (##fl* 1e6 (macro-current-time-point)))))
+
+(define-prim (jiffies-per-second)
+  1000000)
 
 ;;;----------------------------------------------------------------------------
 
@@ -5139,29 +5153,29 @@
 (define-prim (##tcp-service-register! port-number-or-address-or-settings thunk tg tgroup)
   (##process-tcp-server-psettings
    #t
-   (lambda (psettings-and-server-address)
+   (lambda (psettings-and-address-and-port-number)
      (let* ((psettings
-             (##car psettings-and-server-address))
-            (server-address
-             (##cdr psettings-and-server-address))
-            (port-number
-             (macro-psettings-port-number psettings))
-            (server-address-and-port-number
-             (##cons server-address port-number)))
-       (##tcp-service-update! server-address-and-port-number
+             (##vector-ref psettings-and-address-and-port-number 0))
+            (local-address
+             (##vector-ref psettings-and-address-and-port-number 1))
+            (local-port-number
+             (##vector-ref psettings-and-address-and-port-number 2))
+            (local-address-and-local-port-number
+             (##cons local-address local-port-number)))
+       (##tcp-service-update! local-address-and-local-port-number
                               #f)
        (##open-tcp-server-aux
         #t
-        psettings-and-server-address
+        psettings-and-address-and-port-number
         (lambda (server-port)
           (let ((new-thread
                  (##make-root-thread
                   (lambda () (##tcp-service-serve server-port thunk tgroup))
-                  server-address-and-port-number
+                  local-address-and-local-port-number
                   ##tcp-service-tgroup
                   ##stdin-port
                   ##stdout-port)))
-            (##tcp-service-update! server-address-and-port-number
+            (##tcp-service-update! local-address-and-local-port-number
                                    (##cons server-port new-thread))
             (##thread-start! new-thread)
             (##void)))
@@ -5199,16 +5213,16 @@
 (define-prim (##tcp-service-unregister! port-number-or-address-or-settings)
   (##process-tcp-server-psettings
    #t
-   (lambda (psettings-and-server-address)
+   (lambda (psettings-and-address-and-port-number)
      (let* ((psettings
-             (##car psettings-and-server-address))
-            (server-address
-             (##cdr psettings-and-server-address))
-            (port-number
-             (macro-psettings-port-number psettings))
-            (server-address-and-port-number
-             (##cons server-address port-number)))
-       (##tcp-service-update! server-address-and-port-number #f)
+             (##vector-ref psettings-and-address-and-port-number 0))
+            (local-address
+             (##vector-ref psettings-and-address-and-port-number 1))
+            (local-port-number
+             (##vector-ref psettings-and-address-and-port-number 2))
+            (local-address-and-local-port-number
+             (##cons local-address local-port-number)))
+       (##tcp-service-update! local-address-and-local-port-number #f)
        (##void)))
    tcp-service-unregister!
    port-number-or-address-or-settings
@@ -7344,12 +7358,16 @@
 
 ;;; User accessible primitives for time objects.
 
+(##define-macro (macro-current-time-point)
+  `(begin
+     (macro-update-current-time!)
+     (macro-current-time (macro-thread-floats (macro-current-processor)))))
+
 (define-prim (##current-time-point)
-  (macro-update-current-time!)
-  (macro-current-time (macro-thread-floats (macro-current-processor))))
+  (macro-current-time-point))
 
 (define-prim (current-time)
-  (macro-make-time (##current-time-point) #f #f #f))
+  (macro-make-time (macro-current-time-point) #f #f #f))
 
 (define-prim (time? obj)
   (macro-time? obj))
@@ -7367,6 +7385,16 @@
 (define-prim (timeout->time absrel-timeout)
   (macro-force-vars (absrel-timeout)
     (##timeout->time absrel-timeout)))
+
+(define-prim (current-second)
+  (macro-current-time-point))
+
+(define-prim (current-jiffy)
+  (macro-update-current-time!)
+  (##inexact->exact (##flround (##fl* 1e6 (macro-current-time-point)))))
+
+(define-prim (jiffies-per-second)
+  1000000)
 
 ;;;----------------------------------------------------------------------------
 
@@ -8530,29 +8558,29 @@
 (define-prim (##tcp-service-register! port-number-or-address-or-settings thunk tg tgroup)
   (##process-tcp-server-psettings
    #t
-   (lambda (psettings-and-server-address)
+   (lambda (psettings-and-address-and-port-number)
      (let* ((psettings
-             (##car psettings-and-server-address))
-            (server-address
-             (##cdr psettings-and-server-address))
-            (port-number
-             (macro-psettings-port-number psettings))
-            (server-address-and-port-number
-             (##cons server-address port-number)))
-       (##tcp-service-update! server-address-and-port-number
+             (##vector-ref psettings-and-address-and-port-number 0))
+            (local-address
+             (##vector-ref psettings-and-address-and-port-number 1))
+            (local-port-number
+             (##vector-ref psettings-and-address-and-port-number 2))
+            (local-address-and-local-port-number
+             (##cons local-address local-port-number)))
+       (##tcp-service-update! local-address-and-local-port-number
                               #f)
        (##open-tcp-server-aux
         #t
-        psettings-and-server-address
+        psettings-and-address-and-port-number
         (lambda (server-port)
           (let ((new-thread
                  (##make-root-thread
                   (lambda () (##tcp-service-serve server-port thunk tgroup))
-                  server-address-and-port-number
+                  local-address-and-local-port-number
                   ##tcp-service-tgroup
                   ##stdin-port
                   ##stdout-port)))
-            (##tcp-service-update! server-address-and-port-number
+            (##tcp-service-update! local-address-and-local-port-number
                                    (##cons server-port new-thread))
             (##thread-start! new-thread)
             (##void)))
@@ -8590,16 +8618,16 @@
 (define-prim (##tcp-service-unregister! port-number-or-address-or-settings)
   (##process-tcp-server-psettings
    #t
-   (lambda (psettings-and-server-address)
+   (lambda (psettings-and-address-and-port-number)
      (let* ((psettings
-             (##car psettings-and-server-address))
-            (server-address
-             (##cdr psettings-and-server-address))
-            (port-number
-             (macro-psettings-port-number psettings))
-            (server-address-and-port-number
-             (##cons server-address port-number)))
-       (##tcp-service-update! server-address-and-port-number #f)
+             (##vector-ref psettings-and-address-and-port-number 0))
+            (local-address
+             (##vector-ref psettings-and-address-and-port-number 1))
+            (local-port-number
+             (##vector-ref psettings-and-address-and-port-number 2))
+            (local-address-and-local-port-number
+             (##cons local-address local-port-number)))
+       (##tcp-service-update! local-address-and-local-port-number #f)
        (##void)))
    tcp-service-unregister!
    port-number-or-address-or-settings

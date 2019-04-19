@@ -2,7 +2,7 @@
 
 ;;; File: "_io.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -24,16 +24,19 @@
          (lambda () (raise-exception)))
         (raise-exception))))
 
+(define-prim (read-error? obj)
+  (macro-datum-parsing-exception? obj))
+
 (implement-library-type-unterminated-process-exception)
 
 (define-prim (##raise-unterminated-process-exception port proc . args)
   (##extract-procedure-and-arguments
-   port
    proc
    args
+   port
    #f
    #f
-   (lambda (port procedure arguments dummy2 dummy3)
+   (lambda (procedure arguments port dummy2 dummy3)
      (##raise-io-exception
       port
       (macro-make-unterminated-process-exception procedure arguments)))))
@@ -42,12 +45,12 @@
 
 (define-prim (##raise-nonempty-input-port-character-buffer-exception port proc . args)
   (##extract-procedure-and-arguments
-   port
    proc
    args
+   port
    #f
    #f
-   (lambda (port procedure arguments dummy2 dummy3)
+   (lambda (procedure arguments port dummy2 dummy3)
      (##raise-io-exception
       port
       (macro-make-nonempty-input-port-character-buffer-exception procedure arguments)))))
@@ -71,6 +74,9 @@
     (if (##procedure? handler)
         (handler exc)
         (macro-raise exc))))
+
+(define-prim (file-error? obj)
+  (macro-no-such-file-or-directory-exception? obj))
 
 ;;;----------------------------------------------------------------------------
 
@@ -130,6 +136,7 @@
               wrapper
               unwrapper
               allow-script?
+              case-conversion?
               read-cont)
   (macro-make-readenv
    port
@@ -137,6 +144,9 @@
    wrapper
    unwrapper
    allow-script?
+   (if (##eq? case-conversion? '()) ;; default to readtable?
+       (macro-readtable-case-conversion? readtable)
+       case-conversion?)
    (##make-table)
    #f
    0
@@ -916,7 +926,7 @@
                                                    (macro-psettings-address-set!
                                                     psettings
                                                     address))
-                                               (if port-number
+                                               (if (##not (##null? port-number))
                                                    (if (##eq? name 'local-address:)
                                                        (macro-psettings-local-port-number-set!
                                                         psettings
@@ -1175,6 +1185,14 @@
 (define-prim (output-port? obj)
   (macro-force-vars (obj)
     (macro-output-port? obj)))
+
+(define-prim (textual-port? obj)
+  (macro-force-vars (obj)
+    (macro-character-port? obj)))
+
+(define-prim (binary-port? obj)
+  (macro-force-vars (obj)
+    (macro-byte-port? obj)))
 
 (implement-check-type-port)
 (define-fail-check-type input-port 'input-port)
@@ -3130,23 +3148,36 @@
               init-or-settings
               proc))))
 
-       (define-prim (,call-with-output-vect init-or-settings proc)
-         (macro-force-vars (init-or-settings proc)
-           (macro-check-procedure
-             proc
-             2
-             (,call-with-output-vect init-or-settings proc)
-             (,##open-vect-generic
-              (macro-direction-out)
-              (lambda (port)
-                (let ((results ;; may get bound to a multiple-values object
-                       (proc port)))
-                  (##force-output port)
-                  (##close-output-port port)
-                  (,##get-output-vect port)))
-              ,call-with-output-vect
-              init-or-settings
-              proc))))
+       (define-prim (,call-with-output-vect
+                     arg1
+                     #!optional
+                     (arg2 (macro-absent-obj)))
+
+         (define (continue init-or-settings proc)
+           (,##open-vect-generic
+            (macro-direction-out)
+            (lambda (port)
+              (let ((results ;; may get bound to a multiple-values object
+                     (proc port)))
+                (##force-output port)
+                (##close-output-port port)
+                (,##get-output-vect port)))
+            ,call-with-output-vect
+            init-or-settings
+            proc))
+
+         (macro-force-vars (arg1 arg2)
+           (if (##eq? arg2 (macro-absent-obj))
+               (macro-check-procedure
+                 arg1
+                 1
+                 (,call-with-output-vect arg1)
+                 (continue '() arg1))
+               (macro-check-procedure
+                 arg2
+                 2
+                 (,call-with-output-vect arg1 arg2)
+                 (continue arg1 arg2)))))
 
        (define-prim (,with-input-from-vect init-or-settings thunk)
          (macro-force-vars (init-or-settings thunk)
@@ -3165,23 +3196,36 @@
               init-or-settings
               thunk))))
 
-       (define-prim (,with-output-to-vect init-or-settings thunk)
-         (macro-force-vars (init-or-settings thunk)
-           (macro-check-procedure
-             thunk
-             2
-             (,with-output-to-vect init-or-settings thunk)
-             (,##open-vect-generic
-              (macro-direction-out)
-              (lambda (port)
-                (let ((results ;; may get bound to a multiple-values object
-                       (macro-dynamic-bind output-port port thunk)))
-                  (##force-output port)
-                  (##close-output-port port)
-                  (,##get-output-vect port)))
-              ,with-output-to-vect
-              init-or-settings
-              thunk)))))))
+       (define-prim (,with-output-to-vect
+                     arg1
+                     #!optional
+                     (arg2 (macro-absent-obj)))
+
+         (define (continue init-or-settings thunk)
+           (,##open-vect-generic
+            (macro-direction-out)
+            (lambda (port)
+              (let ((results ;; may get bound to a multiple-values object
+                     (macro-dynamic-bind output-port port thunk)))
+                (##force-output port)
+                (##close-output-port port)
+                (,##get-output-vect port)))
+            ,with-output-to-vect
+            init-or-settings
+            thunk))
+
+         (macro-force-vars (arg1 arg2)
+           (if (##eq? arg2 (macro-absent-obj))
+               (macro-check-procedure
+                 arg1
+                 1
+                 (,with-output-to-vect arg1)
+                 (continue '() arg1))
+               (macro-check-procedure
+                 arg2
+                 2
+                 (,with-output-to-vect arg1 arg2)
+                 (continue arg1 arg2))))))))
 
 (define-prim (##vect-port-options options kind buffering)
   (##psettings-options->options
@@ -3857,6 +3901,160 @@
 
 ;;;----------------------------------------------------------------------------
 
+;; Implementation of marktables based on eq? tables.
+
+;; Marktables are used to detect sharing and cycles during printing.
+;; The printer first does a marking phase to determine for every
+;; (non-trivial) subobject if it is shared or cyclical.  Then the
+;; printer uses this information in the printing phase to print labels
+;; when necessary.
+;;
+;; During the marking phase a state is kept for every subobject visited.
+;; The state transitions are:
+;;
+;;  state
+;;
+;;   -1    the subobject has not yet been visited
+;;
+;;   -2    the subobject has been visited once, and not all its children
+;;         have been visited recursively (i.e. the subobject could still be
+;;         part of a cycle, or be shared)
+;;
+;;   -3    the subobject has been visited once, and all its children have been
+;;         visited recursively (i.e. the subobject is not part of a cycle, but
+;;         it may be discovered later that it is shared)
+;;
+;;   -5    the subobject has been visited a second time but only after all its
+;;         children have been visited (i.e. the subobject is shared but it is
+;;         not part of a cycle)
+;;
+;;   -9    the subobject has been visited a second time before all its
+;;         children were visited recursively (i.e. the subobject is part
+;;         of a cycle)
+;;
+;; Negative numbers are used to encode the state to differentiate from
+;; the (non-negative) labels that are assigned during the printing phase.
+;; The bit negation of powers of 2 are used for the last 4 states to
+;; simplify creating a set of these states.
+;;
+;; Here are the state transitions for the events "begin visiting subobject"
+;; and "end visiting subobject":
+;;
+;;  state    begin/end
+;;   -1  -->   -2 / -3  (only case that triggers visiting children)
+;;   -2  -->   -9 / -3
+;;   -3  -->   -5 / -5
+;;   -5  -->   -5 / -5
+;;   -9  -->   -9 / -9
+
+(##define-macro (macro-not-yet-visited)                      -1)
+(##define-macro (macro-children-being-visited)               -2)
+(##define-macro (macro-not-part-of-a-cycle-and-maybe-shared) -3)
+(##define-macro (macro-not-part-of-a-cycle-and-is-shared)    -5)
+(##define-macro (macro-part-of-a-cycle)                      -9)
+
+(##define-macro (macro-cycle-or-shared? state-set)
+  `(##not (##fx= -1
+                 (##fxior ,state-set
+                          (##fxand (macro-not-part-of-a-cycle-and-is-shared)
+                                   (macro-part-of-a-cycle))))))
+
+(##define-macro (macro-marktable-count mt)          `(##vector-ref ,mt 0))
+(##define-macro (macro-marktable-count-set! mt x)   `(##vector-set! ,mt 0 ,x))
+(##define-macro (macro-marktable-table mt)          `(##vector-ref ,mt 1))
+(##define-macro (macro-marktable-table-set! mt x)   `(##vector-set! ,mt 1 ,x))
+(##define-macro (macro-marktable-shared? mt)        `(##vector-ref ,mt 2))
+(##define-macro (macro-marktable-shared?-set! mt x) `(##vector-set! ,mt 2 ,x))
+(##define-macro (macro-marktable-seen mt)           `(##vector-ref ,mt 3))
+(##define-macro (macro-marktable-seen-set! mt x)    `(##vector-set! ,mt 3 ,x))
+(##define-macro (macro-marktable-mask mt)           `(##vector-ref ,mt 3))
+(##define-macro (macro-marktable-mask-set! mt x)    `(##vector-set! ,mt 3 ,x))
+
+(##define-macro (macro-marktable-write-table! mt t obj x)
+  `(if (macro-marktable-shared? ,mt) ;; shared table?
+       (let ((t-copy (##table-copy ,t)))
+         (macro-marktable-table-set! ,mt t-copy)
+         (macro-marktable-shared?-set! ,mt #f)
+         (##table-set! t-copy ,obj ,x))
+       (##table-set! ,t ,obj ,x)))
+
+(define-prim (##make-marktable)
+  (##declare (not interrupts-enabled))
+  (##vector -1   ;; label counter
+            #f   ;; lazily allocated table
+            #f   ;; shared?
+            -1)) ;; set of states seen (inverted bit set), and then mask
+
+(define-prim (##marktable-table-get! mt)
+  (##declare (not interrupts-enabled))
+  (or (macro-marktable-table mt)
+      (let ((t (##make-table 0 #f #f #f ##eq?)))
+        (macro-marktable-table-set! mt t)
+        t)))
+
+(define-prim (##marktable-mark! mt obj begin?)
+  (##declare (not interrupts-enabled))
+  (let* ((t (##marktable-table-get! mt))
+         (state (##table-ref t obj (macro-not-yet-visited))))
+    (if (##fx> state (macro-not-part-of-a-cycle-and-is-shared)) ;; change state?
+        ;; equivalent:
+        ;; (not (or (##fx= state (macro-not-part-of-a-cycle-and-is-shared))
+        ;;          (##fx= state (macro-part-of-a-cycle))))
+
+        (let ((new-state ;; state transition
+               (cond ((##fx= state (macro-not-yet-visited))
+                      (if begin?
+                          (macro-children-being-visited)
+                          (macro-not-part-of-a-cycle-and-maybe-shared)))
+                     ((##fx= state (macro-children-being-visited))
+                      (if begin?
+                          (macro-part-of-a-cycle)
+                          (macro-not-part-of-a-cycle-and-maybe-shared)))
+                     (else
+                      (macro-not-part-of-a-cycle-and-is-shared)))))
+
+          (macro-marktable-seen-set!
+           mt
+           (##fxand (macro-marktable-seen mt) new-state))
+
+          (macro-marktable-write-table! mt t obj new-state)
+
+          (##fx= new-state (macro-children-being-visited)))
+
+        #f)))
+
+(define-prim (##marktable-lookup! mt obj stamp?)
+  (##declare (not interrupts-enabled))
+  (let* ((t (##marktable-table-get! mt))
+         (x (##table-ref t obj (macro-not-yet-visited))))
+    (if (##fx< x 0) ;; first time visited during printing phase
+        (and stamp? ;; allocate a label if we need to
+             (macro-cycle-or-shared? (##fxior x (macro-marktable-mask mt)))
+             (let ((label (##fx+ (macro-marktable-count mt) 1)))
+               (macro-marktable-count-set! mt label)
+               (macro-marktable-write-table! mt t obj label)
+               (##cons obj label))) ;; return id
+        x))) ;; return the label
+
+(define-prim (##marktable-save mt)
+  (##declare (not interrupts-enabled))
+  (let ((state
+         (##vector (macro-marktable-count mt)
+                   (##marktable-table-get! mt)
+                   (macro-marktable-shared? mt)
+                   (macro-marktable-seen mt))))
+    (macro-marktable-shared?-set! mt #t) ;; set "shared table" flag
+    state))
+
+(define-prim (##marktable-restore! mt state)
+  (##declare (not interrupts-enabled))
+  (macro-marktable-count-set!   mt (##vector-ref state 0))
+  (macro-marktable-table-set!   mt (##vector-ref state 1))
+  (macro-marktable-shared?-set! mt (##vector-ref state 2))
+  (macro-marktable-seen-set!    mt (##vector-ref state 3)))
+
+;;;----------------------------------------------------------------------------
+
 ;;; Implementation of generic object port procedures.
 
 (define-prim (##port-of-kind? obj kind)
@@ -3901,6 +4099,7 @@
                    noop
                    noop
                    #f
+                   '()
                    read-cont)))
             ((macro-object-port-read-datum port) port re)))
 
@@ -3928,11 +4127,18 @@
 
   (##declare (not interrupts-enabled))
 
-  (let ((mt
-         (and (macro-readtable-sharing-allowed? rt)
-              (##make-marktable))))
+  (let* ((sharing-allowed?
+          (macro-readtable-sharing-allowed? rt))
+         (mt1
+          (and (if (##eq? sharing-allowed? 'default)
+                   (or (##eq? style 'write-shared)
+                       (##eq? style 'write)
+                       (##eq? style 'display)
+                       (##eq? style 'pretty-print))
+                   sharing-allowed?)
+               (##make-marktable))))
 
-    (define (make-we style)
+    (define (make-we style mt)
       (##make-writeenv
        style
        port
@@ -3947,24 +4153,43 @@
        (or (macro-readtable-max-unescaped-char rt)
            (macro-max-unescaped-char (macro-port-woptions port)))))
 
-    (if mt
-        (let ((we1 (make-we 'mark)))
-          ((macro-object-port-write-datum port) port obj we1)))
-
-    (let ((we2 (make-we style)))
+    (let* ((mt2
+            (and mt1
+                 (let ((we1 (make-we 'mark mt1)))
+                   ((macro-object-port-write-datum port) port obj we1)
+                   (let* ((seen
+                           (macro-marktable-seen mt1))
+                          (mask
+                           ;; only use labels for cycles, unless sharing matters
+                           (##fxior
+                            seen
+                            (if (if (##eq? sharing-allowed? 'default)
+                                    (##eq? style 'write-shared)
+                                    sharing-allowed?)
+                                (##fxand
+                                 (macro-not-part-of-a-cycle-and-is-shared)
+                                 (macro-part-of-a-cycle))
+                                (macro-part-of-a-cycle)))))
+                     (if (##fx= -1 mask)
+                         #f
+                         (begin
+                           (macro-marktable-mask-set! mt1 mask)
+                           mt1))))))
+           (we2
+            (make-we style mt2)))
       ((macro-object-port-write-datum port) port obj we2)
       (##fx- limit (macro-writeenv-limit we2)))))
 
-(define-prim (##write
+(define-prim (##write-with-style
               obj
               port
-              #!optional
-              (max-length ##max-fixnum)
-              (force? (macro-if-auto-forcing #t #f)))
+              max-length
+              force?
+              style)
   (if (macro-character-output-port? port)
       (begin
         (##write-generic-to-character-port
-         'write
+         style
          port
          (macro-character-port-output-readtable port)
          force?
@@ -3972,6 +4197,19 @@
          obj)
         (##void))
       ((macro-object-port-write-datum port) port obj #f)))
+
+(define-prim (##write
+              obj
+              port
+              #!optional
+              (max-length ##max-fixnum)
+              (force? (macro-if-auto-forcing #t #f)))
+  (##write-with-style
+   obj
+   port
+   max-length
+   force?
+   'write))
 
 (define-prim (write
               obj
@@ -3984,6 +4222,56 @@
                port)))
       (macro-check-object-output-port p 2 (write obj p)
         (##write obj p)))))
+
+(define-prim (##write-shared
+              obj
+              port
+              #!optional
+              (max-length ##max-fixnum)
+              (force? (macro-if-auto-forcing #t #f)))
+  (##write-with-style
+   obj
+   port
+   max-length
+   force?
+   'write-shared))
+
+(define-prim (write-shared
+              obj
+              #!optional
+              (port (macro-absent-obj)))
+  (macro-force-vars (obj port)
+    (let ((p
+           (if (##eq? port (macro-absent-obj))
+               (macro-current-output-port)
+               port)))
+      (macro-check-object-output-port p 2 (write-shared obj p)
+        (##write-shared obj p)))))
+
+(define-prim (##write-simple
+              obj
+              port
+              #!optional
+              (max-length ##max-fixnum)
+              (force? (macro-if-auto-forcing #t #f)))
+  (##write-with-style
+   obj
+   port
+   max-length
+   force?
+   'write-simple))
+
+(define-prim (write-simple
+              obj
+              #!optional
+              (port (macro-absent-obj)))
+  (macro-force-vars (obj port)
+    (let ((p
+           (if (##eq? port (macro-absent-obj))
+               (macro-current-output-port)
+               port)))
+      (macro-check-object-output-port p 2 (write-simple obj p)
+        (##write-simple obj p)))))
 
 (define-prim (##display
               obj
@@ -4133,16 +4421,19 @@
 
 (define-prim (##force-output-catching-exceptions port)
 
-  ;; ignoring exceptions helps avoid infinite loops when forcing the
+  ;; Ignoring exceptions helps avoid infinite loops when forcing the
   ;; output of predefined ports at program exit (for example the
   ;; disk might be full while forcing stdout redirected to a file
   ;; and an attempt to write an error message on stdout for this
-  ;; exception would also raise an exception)
+  ;; exception would also raise an exception).
+  ;; Also avoid installing exception catcher when thread system
+  ;; is not yet initialized.
 
-  (##with-exception-catcher
-   (lambda (e) #f)
-   (lambda ()
-     (##force-output port))))
+  (if (macro-current-thread)
+      (##with-exception-catcher
+       (lambda (e) #f)
+       (lambda ()
+         (##force-output port)))))
 
 (define-prim (force-output
               #!optional
@@ -4166,6 +4457,20 @@
               2
               (force-output p level)
               (##force-output p level)))))))
+
+(define-prim (flush-output-port
+              #!optional
+              (port (macro-absent-obj)))
+  (macro-force-vars (port)
+    (let ((p
+           (if (##eq? port (macro-absent-obj))
+               (macro-current-output-port)
+               port)))
+      (macro-check-object-output-port
+        p
+        1
+        (flush-output-port p)
+        (##force-output p)))))
 
 (define-prim (##wait-input-port port)
 
@@ -4254,6 +4559,16 @@
   (macro-force-vars (port)
     (macro-check-port port 1 (close-port port)
       (##close-port port))))
+
+(define-prim (input-port-open? port)
+  (macro-force-vars (port)
+    (macro-check-input-port port 1 (input-port-open? port)
+      #t))) ;; in general, it is not possible to know if a port is "open"
+
+(define-prim (output-port-open? port)
+  (macro-force-vars (port)
+    (macro-check-output-port port 1 (output-port-open? port)
+      #t))) ;; in general, it is not possible to know if a port is "open"
 
 (define-prim (input-port-readtable port)
   (macro-force-vars (port)
@@ -4833,7 +5148,8 @@
               end
               port
               #!optional
-              (need (macro-absent-obj)))
+              (need (macro-absent-obj))
+              (raise-os-exception? #t))
 
   (##declare (not interrupts-enabled))
 
@@ -4907,16 +5223,18 @@
                          (if (or (##fx< 0 n)
                                  (##fx= code ##err-code-EAGAIN))
                              n
-                             (##raise-os-io-exception
-                              port
-                              #f
-                              code
-                              read-substring
-                              str
-                              start
-                              end
-                              port
-                              need)))
+                             (if raise-os-exception?
+                                 (##raise-os-io-exception
+                                  port
+                                  #f
+                                  code
+                                  read-substring
+                                  str
+                                  start
+                                  end
+                                  port
+                                  need)
+                                 code)))
 
                         (code
 
@@ -4949,29 +5267,58 @@
         str
         1
         (read-substring str start end port need)
-        (macro-check-index-range-incl
-          start
-          2
-          0
-          (##string-length str)
+        (macro-check-mutable
+          str
+          1
           (read-substring str start end port need)
           (macro-check-index-range-incl
-            end
-            3
             start
+            2
+            0
             (##string-length str)
             (read-substring str start end port need)
-            (macro-check-character-input-port
-              p
-              4
+            (macro-check-index-range-incl
+              end
+              3
+              start
+              (##string-length str)
               (read-substring str start end port need)
-              (if (##eq? need (macro-absent-obj))
-                  (##read-substring str start end p)
-                  (macro-check-index
-                    need
-                    5
-                    (read-substring str start end port need)
-                    (##read-substring str start end p need))))))))))
+              (macro-check-character-input-port
+                p
+                4
+                (read-substring str start end port need)
+                (if (##eq? need (macro-absent-obj))
+                    (##read-substring str start end p)
+                    (macro-check-index
+                      need
+                      5
+                      (read-substring str start end port need)
+                      (##read-substring str start end p need)))))))))))
+
+(define-prim (read-string
+              k
+              #!optional
+              (port (macro-absent-obj)))
+  (macro-force-vars (k port)
+    (macro-check-index
+      k
+      1
+      (read-string k port)
+      (let* ((p
+              (if (##eq? port (macro-absent-obj))
+                  (macro-current-input-port)
+                  port))
+             (str
+              (##make-string k))
+             (n
+              (##read-substring str 0 k p #f #f)))
+        (cond ((##fx> n 0)
+               (##string-shrink! str n)
+               str)
+              ((##fx= n 0)
+               #!eof)
+              (else
+               (##raise-os-io-exception port #f n read-string k port)))))))
 
 (define-prim (##read-line port separator include-separator? max-length)
 
@@ -4983,7 +5330,7 @@
           (if (##fx< i ml)
               (let ((c (macro-read-char port)))
                 (if (##char? c)
-                    (if (##eq? c separator)
+                    (if (##eq? c separator) ;; note: separator is a char or #f
                         (if include-separator?
                             (let ((s (##make-string (##fx+ i 1))))
                               (##string-set! s i c)
@@ -5008,7 +5355,7 @@
                  (chunk1 (read-chunk 1 m1)))
             (##string-set! chunk1 0 first)
             (if (or (##fx< (##string-length chunk1) m1)
-                    (##eq? (##string-ref chunk1 (##fx- m1 1))
+                    (##eq? (##string-ref chunk1 (##fx- m1 1)) ;; note: separator is a char or #f
                            separator)
                     (##fx= ml m1))
                 chunk1
@@ -5018,7 +5365,7 @@
                          (new-chunk (read-chunk 0 m2))
                          (new-chunks (##cons new-chunk chunks)))
                     (if (or (##fx< (##string-length new-chunk) m2)
-                            (##eq? (##string-ref new-chunk (##fx- m2 1))
+                            (##eq? (##string-ref new-chunk (##fx- m2 1)) ;; note: separator is a char or #f
                                    separator)
                             (##fx= ml m2))
                         (##append-strings (##reverse new-chunks))
@@ -5026,7 +5373,7 @@
                               new-chunks)))))))
 
         (if (##char? first)
-            (if (##eq? first separator)
+            (if (##eq? first separator) ;; note: separator is a char or #f
                 (if include-separator?
                     (##string first)
                     (##string))
@@ -5171,7 +5518,7 @@
             (##readtable-copy-shallow readtable)))
        (macro-readtable-start-syntax-set! rt start-syntax)
        (let* ((re
-               (##make-readenv port rt wrap unwrap 'script #f))
+               (##make-readenv port rt wrap unwrap #t '() #f))
               (head
                (##cons (wrap re '##begin)
                        '())) ;; tail will be replaced with expressions read
@@ -5179,30 +5526,22 @@
                (wrap re head))
               (first
                (##read-datum-or-eof re))
-              (script-line
-               (and (##eq? first (##script-marker))
-                    (##read-line port #\newline #f ##max-fixnum)))
-              (language-and-tail
-               (##extract-language-and-tail script-line)))
-         (if language-and-tail
-             (let ((language (##car language-and-tail)))
-               (##readtable-setup-for-language! rt language)))
-         (let* ((rest
-                 (if (##eof-object? first)
-                     '()
-                     (##read-all re ##read-datum-or-eof)))
-                (port-name
-                 (##port-name port)))
-           (if close-port?
-               (##close-input-port port))
-           (cond ((##eof-object? first)
-                  (##vector #f expr port-name))
-                 ((##eq? first (##script-marker))
-                  (##set-cdr! head rest)
-                  (##vector script-line expr port-name))
-                 (else
-                  (##set-cdr! head (##cons first rest))
-                  (##vector #f expr port-name)))))))))
+              (rest
+               (if (##eof-object? first)
+                   '()
+                   (##read-all re ##read-datum-or-eof))))
+         (if close-port?
+             (##close-input-port port))
+         (if (##not (##eof-object? first))
+             (##set-cdr! head
+                         (if (##eq? first (##script-marker))
+                             rest
+                             (##cons first rest))))
+         (let* ((sl (macro-readenv-script-line re))
+                (script-line (and (##string? sl) sl)))
+           (##vector script-line
+                     expr
+                     (##port-name port))))))))
 
 (define-prim (##write-char2 c port)
 
@@ -5365,6 +5704,43 @@
   (##declare (not interrupts-enabled))
   (##write-substring str 0 (##string-length str) port))
 
+(define-prim (write-string
+              str
+              #!optional
+              (port (macro-absent-obj))
+              (start (macro-absent-obj))
+              (end (macro-absent-obj)))
+  (macro-force-vars (str port start end)
+    (macro-check-string
+      str
+      1
+      (write-string str port start end)
+      (let ((p
+             (if (##eq? port (macro-absent-obj))
+                 (macro-current-output-port)
+                 port)))
+        (macro-check-character-output-port
+          p
+          2
+          (write-string str port start end)
+          (if (##eq? start (macro-absent-obj))
+              (##write-substring str 0 (##string-length str) p)
+              (macro-check-index-range-incl
+                start
+                3
+                0
+                (##string-length str)
+                (write-string str port start end)
+                (if (##eq? end (macro-absent-obj))
+                    (##write-substring str start (##string-length str) p)
+                    (macro-check-index-range-incl
+                      end
+                      4
+                      start
+                      (##string-length str)
+                      (write-string str port start end)
+                      (##write-substring str start end p))))))))))
+
 ;;;----------------------------------------------------------------------------
 
 ;;; Implementation of generic byte port procedures.
@@ -5409,6 +5785,58 @@
       1
       (input-port-bytes-buffered port)
       (##input-port-bytes-buffered port))))
+
+(define-prim (##u8-ready?1 port)
+
+  (##declare (not interrupts-enabled))
+
+  (macro-lock-and-check-input-port-character-buffer-empty
+   port
+   (u8-ready? port)
+   (let* ((byte-rlo
+           (macro-byte-port-rlo port))
+          (byte-rhi
+           (macro-byte-port-rhi port)))
+     (if (##fx< byte-rlo byte-rhi)
+         (begin
+           (macro-port-mutex-unlock! port)
+           #t)
+         (let ((code ((macro-byte-port-rbuf-fill port)
+                      port
+                      1
+                      #f)))
+           (if (##fixnum? code)
+               (if (##fx= code ##err-code-EAGAIN)
+                   (begin
+                     (macro-port-mutex-unlock! port)
+                     #f) ;; a call to read-u8 would block
+                   (begin
+                     (macro-port-mutex-unlock! port)
+                     (##raise-os-io-exception port #f code u8-ready? port)))
+               (begin
+                 (macro-port-mutex-unlock! port)
+                 #t)))))))
+
+(define-prim (##u8-ready?0)
+  (##u8-ready?1 (macro-current-input-port)))
+
+(define-prim (##u8-ready?
+              #!optional
+              (port (macro-absent-obj)))
+  (if (##eq? port (macro-absent-obj))
+      (##u8-ready?0)
+      (##u8-ready?1 port)))
+
+(define-prim (u8-ready?
+              #!optional
+              (port (macro-absent-obj)))
+  (macro-force-vars (port)
+    (let ((p
+           (if (##eq? port (macro-absent-obj))
+               (macro-current-input-port)
+               port)))
+      (macro-check-byte-input-port p 1 (u8-ready? p)
+        (##u8-ready?1 p)))))
 
 (define-prim (##read-u8 port)
 
@@ -5485,7 +5913,8 @@
               end
               port
               #!optional
-              (need (macro-absent-obj)))
+              (need (macro-absent-obj))
+              (raise-os-exception? #t))
 
   (##declare (not interrupts-enabled))
 
@@ -5539,16 +5968,18 @@
                           (if (or (##fx< 0 n)
                                   (##fx= code ##err-code-EAGAIN))
                               n
-                              (##raise-os-io-exception
-                               port
-                               #f
-                               code
-                               read-subu8vector
-                               u8vect
-                               start
-                               end
-                               port
-                               need)))
+                              (if raise-os-exception?
+                                  (##raise-os-io-exception
+                                   port
+                                   #f
+                                   code
+                                   read-subu8vector
+                                   u8vect
+                                   start
+                                   end
+                                   port
+                                   need)
+                                  code)))
 
                          (code
 
@@ -5581,29 +6012,115 @@
         u8vect
         1
         (read-subu8vector u8vect start end port need)
-        (macro-check-index-range-incl
-          start
-          2
-          0
-          (##u8vector-length u8vect)
+        (macro-check-mutable
+          u8vect
+          1
           (read-subu8vector u8vect start end port need)
           (macro-check-index-range-incl
-            end
-            3
             start
+            2
+            0
             (##u8vector-length u8vect)
             (read-subu8vector u8vect start end port need)
-            (macro-check-byte-input-port
-              p
-              4
+            (macro-check-index-range-incl
+              end
+              3
+              start
+              (##u8vector-length u8vect)
               (read-subu8vector u8vect start end port need)
-              (if (##eq? need (macro-absent-obj))
-                  (##read-subu8vector u8vect start end p)
-                  (macro-check-index
-                    need
-                    5
-                    (read-subu8vector u8vect start end port need)
-                    (##read-subu8vector u8vect start end p need))))))))))
+              (macro-check-byte-input-port
+                p
+                4
+                (read-subu8vector u8vect start end port need)
+                (if (##eq? need (macro-absent-obj))
+                    (##read-subu8vector u8vect start end p)
+                    (macro-check-index
+                      need
+                      5
+                      (read-subu8vector u8vect start end port need)
+                      (##read-subu8vector u8vect start end p need)))))))))))
+
+(define-prim (read-bytevector
+              k
+              #!optional
+              (port (macro-absent-obj)))
+  (macro-force-vars (k port)
+    (macro-check-index
+      k
+      1
+      (read-bytevector k port)
+      (let ((p
+             (if (##eq? port (macro-absent-obj))
+                 (macro-current-input-port)
+                 port)))
+        (macro-check-byte-input-port
+          p
+          2
+          (read-bytevector k port)
+          (let* ((u8vect
+                  (##make-u8vector k))
+                 (n
+                  (##read-subu8vector u8vect 0 k p #f #f)))
+            (cond ((##fx> n 0)
+                   (##u8vector-shrink! u8vect n)
+                   u8vect)
+                  ((##fx= n 0)
+                   #!eof)
+                  (else
+                   (##raise-os-io-exception port #f n read-bytevector k port)))))))))
+
+(define-prim (##read-bytevector! u8vect port start end)
+  (##declare (not interrupts-enabled))
+  (if (##fx< start end)
+      (let ((n (##read-subu8vector u8vect start end port #f #f)))
+        (cond ((##fx> n 0)
+               n)
+              ((##fx= n 0)
+               #!eof)
+              (else
+               (##raise-os-io-exception port #f n read-bytevector! u8vect port start end))))
+      0))
+
+(define-prim (read-bytevector!
+              u8vect
+              #!optional
+              (port (macro-absent-obj))
+              (start (macro-absent-obj))
+              (end (macro-absent-obj)))
+  (macro-force-vars (u8vect port start end)
+    (macro-check-u8vector
+      u8vect
+      1
+      (read-bytevector! u8vect port start end)
+      (macro-check-mutable
+        u8vect
+        1
+        (read-bytevector! u8vect port start end)
+        (let ((p
+               (if (##eq? port (macro-absent-obj))
+                   (macro-current-output-port)
+                   port)))
+          (macro-check-byte-input-port
+            p
+            2
+            (read-bytevector! u8vect port start end)
+            (if (##eq? start (macro-absent-obj))
+                (##read-bytevector! u8vect p 0 (##u8vector-length u8vect))
+                (macro-check-index-range-incl
+                  start
+                  3
+                  0
+                  (##u8vector-length u8vect)
+                  (read-bytevector! u8vect port start end)
+                  (if (##eq? end (macro-absent-obj))
+                      (##read-bytevector! u8vect p start (##u8vector-length u8vect))
+                      (macro-check-index-range-incl
+                        end
+                        4
+                        start
+                        (##u8vector-length u8vect)
+                        (read-bytevector! u8vect port start end)
+                        (##read-bytevector! u8vect p start end)))))))))))
 
 (define-prim (##write-u8 b port)
 
@@ -5815,6 +6332,75 @@
               4
               (write-subu8vector u8vect start end p)
               (##write-subu8vector u8vect start end p))))))))
+
+(define-prim (##write-bytevector u8vect port start end)
+  (##declare (not interrupts-enabled))
+  (##write-subu8vector u8vect start end port)
+  (##void))
+
+(define-prim (write-bytevector
+              u8vect
+              #!optional
+              (port (macro-absent-obj))
+              (start (macro-absent-obj))
+              (end (macro-absent-obj)))
+  (macro-force-vars (u8vect port start end)
+    (macro-check-u8vector
+      u8vect
+      1
+      (write-bytevector u8vect port start end)
+      (let ((p
+             (if (##eq? port (macro-absent-obj))
+                 (macro-current-output-port)
+                 port)))
+        (macro-check-byte-output-port
+          p
+          2
+          (write-bytevector u8vect port start end)
+          (if (##eq? start (macro-absent-obj))
+              (##write-bytevector u8vect p 0 (##u8vector-length u8vect))
+              (macro-check-index-range-incl
+                start
+                3
+                0
+                (##u8vector-length u8vect)
+                (write-bytevector u8vect port start end)
+                (if (##eq? end (macro-absent-obj))
+                    (##write-bytevector u8vect p start (##u8vector-length u8vect))
+                    (macro-check-index-range-incl
+                      end
+                      4
+                      start
+                      (##u8vector-length u8vect)
+                      (write-bytevector u8vect port start end)
+                      (##write-bytevector u8vect p start end))))))))))
+
+(define-prim (open-input-bytevector u8vect)
+  (macro-force-vars (u8vect)
+    (macro-check-u8vector
+      u8vect
+      1
+      (open-input-bytevector u8vect)
+      (##open-u8vector-generic
+       (macro-direction-in)
+       (lambda (port) port)
+       open-input-bytevector
+       u8vect))))
+
+(define-prim (open-output-bytevector)
+  (##open-u8vector-generic
+   (macro-direction-out)
+   (lambda (port) port)
+   open-output-bytevector
+   '()))
+
+(define-prim (get-output-bytevector port)
+  (macro-force-vars (port)
+    (macro-check-u8vector-output-port
+      port
+      1
+      (get-output-bytevector port)
+      (##get-output-u8vector port))))
 
 (define-prim (##options-set! port options)
 
@@ -8172,23 +8758,27 @@
       u8vect
       1
       (udp-read-subu8vector u8vect start end port)
-      (macro-check-index-range-incl
-        start
-        2
-        0
-        (##u8vector-length u8vect)
+      (macro-check-mutable
+        u8vect
+        1
         (udp-read-subu8vector u8vect start end port)
         (macro-check-index-range-incl
-          end
-          3
           start
+          2
+          0
           (##u8vector-length u8vect)
           (udp-read-subu8vector u8vect start end port)
-          (macro-check-udp-input-port
-            p
-            4
+          (macro-check-index-range-incl
+            end
+            3
+            start
+            (##u8vector-length u8vect)
             (udp-read-subu8vector u8vect start end port)
-            (##udp-read-subu8vector u8vect start end p udp-read-subu8vector #f))))))))
+            (macro-check-udp-input-port
+              p
+              4
+              (udp-read-subu8vector u8vect start end port)
+              (##udp-read-subu8vector u8vect start end p udp-read-subu8vector #f)))))))))
 
 (define-prim (##udp-read-u8vector port)
   (##udp-read-subu8vector #f #f #f port udp-read-u8vector #f))
@@ -9003,6 +9593,14 @@
   (macro-force-vars (path-or-settings)
     (##open-input-file path-or-settings)))
 
+(define-prim (open-binary-input-file path-or-settings)
+  (##open-file-generic
+   (macro-direction-in)
+   #t
+   (lambda (port) port)
+   open-binary-input-file
+   path-or-settings))
+
 (define-prim (##open-output-file path-or-settings)
   (##open-file-generic
    (macro-direction-out)
@@ -9014,6 +9612,14 @@
 (define-prim (open-output-file path-or-settings)
   (macro-force-vars (path-or-settings)
     (##open-output-file path-or-settings)))
+
+(define-prim (open-binary-output-file path-or-settings)
+  (##open-file-generic
+   (macro-direction-out)
+   #t
+   (lambda (port) port)
+   open-binary-output-file
+   path-or-settings))
 
 (define-prim (call-with-input-file path-or-settings proc)
   (macro-force-vars (path-or-settings proc)
@@ -9090,6 +9696,15 @@
        thunk))))
 
 ;;;----------------------------------------------------------------------------
+
+(define-prim (call-with-port port proc)
+  (macro-force-vars (port proc)
+    (macro-check-port port 1 (call-with-port port proc)
+      (macro-check-procedure proc 2 (call-with-port port proc)
+        (let ((results ;; may get bound to a multiple-values object
+               (proc port)))
+          (##close-port port)
+          results)))))
 
 (define-prim (with-input-from-port port thunk)
   (macro-force-vars (port thunk)
@@ -9253,7 +9868,7 @@
   (##make-path-psettings
    direction
    (##list 'readtable: ##main-readtable)
-   ##exit-abnormally
+   ##exit-abruptly
    (lambda (psettings)
      (let ((device
             (##os-device-stream-open-predefined
@@ -9619,7 +10234,7 @@
            (let ((status (call-main (##list (##cdr ##processed-command-line)))))
              (if (##fixnum? status)
                  (##exit status)
-                 (##exit-abnormally)))))
+                 (##exit-abruptly)))))
         (else
          (lambda ()
            (call-main (##cdr ##processed-command-line))
@@ -9634,117 +10249,6 @@
 (##define-macro (macro-must-escape-char? we c)
   `(or (macro-ctrl-char? ,c)
        (macro-gt-max-unescaped-char? ,we ,c)))
-
-;;;----------------------------------------------------------------------------
-
-;; Disable old implementation of marktables based on association lists.
-#;
-(begin
-
-  (define-prim (##make-marktable)
-    (##declare (not interrupts-enabled))
-    (##vector -1 '()))
-
-  (define-prim (##marktable-mark! table obj)
-    (##declare (not interrupts-enabled))
-    (let ((alist (##vector-ref table 1)))
-      (let ((x (##assq obj alist)));;;;;;;;;;;;;
-        (if x
-            (begin
-              (##set-cdr! x #t)
-              #f)
-            (begin
-              (##vector-set! table 1 (##cons (##cons obj #f) alist))
-              #t)))))
-
-  (define-prim (##marktable-lookup! table obj stamp?)
-    (##declare (not interrupts-enabled))
-    (let ((alist (##vector-ref table 1)))
-      (let ((x (##assq obj alist)));;;;;;;;;;;;;;;;
-        (if x
-            (let ((id (##cdr x)))
-              (if (and stamp? (##eq? id #t))
-                  (let ((n (##fx+ (##vector-ref table 0) 1)))
-                    (##vector-set! table 0 n)
-                    (##set-cdr! x n)
-                    x)
-                  id))
-            #f))))
-
-  (define-prim (##marktable-save table)
-    (##declare (not interrupts-enabled))
-    (##vector-ref table 0))
-
-  (define-prim (##marktable-restore! table n)
-    (##declare (not interrupts-enabled))
-    (##vector-set! table 0 n)
-    (let ((alist (##vector-ref table 1)))
-      (let loop ((lst alist))
-        (if (##pair? lst)
-            (let* ((x (##car lst))
-                   (id (##cdr x)))
-              (if (and (##fixnum? id)
-                       (##fx< n id))
-                  (##set-cdr! x #t))
-              (loop (##cdr lst)))))))
-  )
-
-;; Implementation of marktables based on eq? tables.
-
-(begin
-
-  (define-prim (##make-marktable)
-    (##declare (not interrupts-enabled))
-    (##vector -1 (##make-table 0 #f #f #f ##eq?) #f))
-
-  (define-prim (##marktable-mark! table obj)
-    (##declare (not interrupts-enabled))
-    (let* ((t (##vector-ref table 1))
-           (x (##table-ref t obj '())))
-      (if (or (##eq? x '()) (##eq? x #f))
-          (begin
-            (if (##vector-ref table 2) ;; shared table?
-                (let ((t-copy (##table-copy t)))
-                  (##vector-set! table 1 t-copy)
-                  (##vector-set! table 2 #f)
-                  (##table-set! t-copy obj (##eq? x #f)))
-                (##table-set! t obj (##eq? x #f)))
-            (##eq? x '()))
-          #f)))
-
-  (define-prim (##marktable-lookup! table obj stamp?)
-    (##declare (not interrupts-enabled))
-    (let* ((t (##vector-ref table 1))
-           (x (##table-ref t obj '())))
-      (if (##eq? x '())
-          #f
-          (if (and stamp? (##eq? x #t))
-              (let ((n (##fx+ (##vector-ref table 0) 1)))
-                (##vector-set! table 0 n)
-                (if (##vector-ref table 2) ;; shared table?
-                    (let ((t-copy (##table-copy t)))
-                      (##vector-set! table 1 t-copy)
-                      (##vector-set! table 2 #f)
-                      (##table-set! t-copy obj n))
-                    (##table-set! t obj n))
-                (##cons obj n))
-              x))))
-
-  (define-prim (##marktable-save table)
-    (##declare (not interrupts-enabled))
-    (let ((state
-           (##vector (##vector-ref table 0)
-                     (##vector-ref table 1)
-                     (##vector-ref table 2))))
-      (##vector-set! table 2 #t) ;; set "shared table" flag
-      state))
-
-  (define-prim (##marktable-restore! table state)
-    (##declare (not interrupts-enabled))
-    (##vector-set! table 0 (##vector-ref state 0))
-    (##vector-set! table 1 (##vector-ref state 1))
-    (##vector-set! table 2 (##vector-ref state 2)))
-  )
 
 ;;;----------------------------------------------------------------------------
 
@@ -9926,11 +10430,12 @@
 (define-prim (##wr-sn we obj type name)
   (case (macro-writeenv-style we)
     ((mark)
-     (if (##wr-mark we obj)
+     (if (##wr-mark-begin we obj)
          (begin
            (##wr-no-display we type)
            (if (##not (##eq? name (##void)))
-               (##wr-no-display we name)))))
+               (##wr-no-display we name))
+           (##wr-mark-end we obj))))
     (else
      (if (##wr-stamp we obj)
          (begin
@@ -9954,11 +10459,19 @@
       (else
        (##wr we obj)))))
 
-(define-prim (##wr-mark we obj)
+(define-prim (##wr-mark-begin we obj)
   (let ((mt (macro-writeenv-marktable we)))
     (if mt
-        (##marktable-mark! mt obj)
+        (##marktable-mark! mt obj #t)
         #t)))
+
+(define-prim (##wr-mark-end we obj)
+  (let ((mt (macro-writeenv-marktable we)))
+    (and mt
+         (##marktable-mark! mt obj #f))))
+
+(define-prim (##wr-mark we obj)
+  (##wr-mark-end we obj))
 
 (define-prim (##wr-stamp we obj)
   (let ((mt (macro-writeenv-marktable we)))
@@ -10028,16 +10541,20 @@
         (##escape-symkey? we str))))
 
 (define-prim (##escape-symkey? we str);;;;;;;;;;;;;;;;;;;;;;;;;;
-  (let ((n (##string-length str)))
-    (let loop ((i (##fx- n 1)))
-      (if (##fx< i 0)
-          #f
-          (let ((c (##string-ref str i))
-                (rt (macro-writeenv-readtable we)))
-            (or (macro-must-escape-char? we c)
-                (##readtable-char-delimiter? rt c)
-                (##not (##char=? c (##readtable-convert-case rt c)))
-                (loop (##fx- i 1))))))))
+  (let ((rt (macro-writeenv-readtable we)))
+    (or (##not (##string=?
+                (##convert-case
+                 (macro-readtable-case-conversion? rt)
+                 str)
+                str))
+        (let ((n (##string-length str)))
+          (let loop ((i (##fx- n 1)))
+            (if (##fx< i 0)
+                #f
+                (let ((c (##string-ref str i)))
+                  (or (macro-must-escape-char? we c)
+                      (##readtable-char-delimiter? rt c)
+                      (loop (##fx- i 1))))))))))
 
 (define-prim (##wr-keyword we obj)
   (let ((uninterned? (##uninterned-keyword? obj)))
@@ -10379,10 +10896,11 @@
 
   (case (macro-writeenv-style we)
     ((mark)
-     (if (##wr-mark we obj)
+     (if (##wr-mark-begin we obj)
          (begin;;;;;;;;;;;;;;;;;;;;;;;check level and length?
            (##wr we (##car obj))
-           (##wr we (##cdr obj)))))
+           (##wr we (##cdr obj))
+           (##wr-mark-end we obj))))
     ((print)
      (##wr we (##car obj))
      (##wr we (##cdr obj)))
@@ -10466,7 +10984,11 @@
               (##wr-ch we obj))
              (else
               (let ((n (##char->integer obj)))
-                (cond ((##fx< #xffff n)
+                (cond ((macro-readtable-r7rs-compatible-write?
+                        (macro-writeenv-readtable we))
+                       (##wr-ch we #\x)
+                       (##wr-hex we n #f))
+                      ((##fx< #xffff n)
                        (##wr-ch we #\U)
                        (##wr-hex we n 8))
                       ((##fx< #xff n)
@@ -10546,6 +11068,12 @@
                 (cond (x
                        (##wr-ch we x)
                        (loop j+1 j+1 #f))
+                      ((macro-readtable-r7rs-compatible-write?
+                        (macro-writeenv-readtable we))
+                       (##wr-ch we #\x)
+                       (##wr-hex we n #f)
+                       (##wr-ch we #\;)
+                       (loop j+1 j+1 #f))
                       ((##fx< #xffff n)
                        (##wr-ch we #\U)
                        (##wr-hex we n 8)
@@ -10596,8 +11124,10 @@
 (define-prim (##wr-vector-aux1 we obj len vect-ref open-close)
   (case (macro-writeenv-style we)
     ((mark)
-     (if (##wr-mark we obj)
-         (##wr-vector-aux2 we obj len vect-ref)))
+     (if (##wr-mark-begin we obj)
+         (begin
+           (##wr-vector-aux2 we obj len vect-ref)
+           (##wr-mark-end we obj))))
     ((print)
      (##wr-vector-aux2 we obj len vect-ref))
     (else
@@ -10865,13 +11395,14 @@
 (define-prim (##wr-serialize we obj explode open-close)
   (case (macro-writeenv-style we)
     ((mark)
-     (if (##wr-mark we obj)
+     (if (##wr-mark-begin we obj)
          (let ((vect (explode obj)))
            (##wr-vector-aux2
             we
             vect
             (##vector-length vect)
-            ##vector-ref))))
+            ##vector-ref)
+           (##wr-mark-end we obj))))
     (else
      (if (##wr-stamp we obj)
          (let ((vect (explode obj)))
@@ -11092,14 +11623,16 @@
         (else
          (case (macro-writeenv-style we)
            ((mark)
-            (if (##wr-mark we obj)
-                (for-each-visible-field
-                 (lambda (field-name value last?)
-                   (##wr-no-display we field-name)
-                   (##wr-no-display we value))
-                 obj
-                 (##structure-type obj)
-                 #t)))
+            (if (##wr-mark-begin we obj)
+                (begin
+                  (for-each-visible-field
+                   (lambda (field-name value last?)
+                     (##wr-no-display we field-name)
+                     (##wr-no-display we value))
+                   obj
+                   (##structure-type obj)
+                   #t)
+                  (##wr-mark-end we obj))))
            (else
             (if (##wr-stamp we obj)
                 (if (case (macro-writeenv-style we)
@@ -11276,8 +11809,10 @@
 (define-prim (##wr-box we obj)
   (case (macro-writeenv-style we)
     ((mark)
-     (if (##wr-mark we obj)
-         (##wr we (##unbox obj))))
+     (if (##wr-mark-begin we obj)
+         (begin
+           (##wr we (##unbox obj))
+           (##wr-mark-end we obj))))
     (else
      (if (case (macro-writeenv-style we)
            ((print) #t)
@@ -11321,14 +11856,18 @@
 
 ;;;----------------------------------------------------------------------------
 
-;;; IEEE Scheme procedures:
-
 (define-prim (##eof-object? x)
   (##eq? x #!eof))
 
 (define-prim (eof-object? x)
   (macro-force-vars (x)
     (##eof-object? x)))
+
+(define-prim (##eof-object)
+  #!eof);;TODO: remove after bootstrap
+
+(define-prim (eof-object)
+  (##eof-object))
 
 ;;;----------------------------------------------------------------------------
 
@@ -11363,6 +11902,7 @@
 (##define-macro (char? . args)            `(##char? ,@args))
 (##define-macro (cons . args)             `(##cons ,@args))
 (##define-macro (eq? . args)              `(##eq? ,@args))
+(##define-macro (eqv? . args)             `(##eqv? ,@args))
 (##define-macro (complex? . args)         `(##complex? ,@args))
 (##define-macro (exact? . args)           `(##exact? ,@args))
 (##define-macro (for-each . args)         `(##for-each ,@args))
@@ -11503,6 +12043,8 @@
 
 (define ##standard-named-char-table
   '(
+    ("null"      . #\x00) ;; for R7RS compatibility (null and escape
+    ("escape"    . #\x1B) ;; must be the two first in this list)
     ("newline"   . #\newline) ;; here to take precedence over linefeed
     ("space"     . #\space)
     ("nul"       . #\x00)
@@ -11594,28 +12136,17 @@
   (##readtable-char-delimiter?-set! rt c delimiter?)
   (##readtable-char-handler-set! rt c handler))
 
-(define (##readtable-convert-case rt c)
-  (let ((case-conversion? (macro-readtable-case-conversion? rt)))
-    (if case-conversion?
-        (if (eq? case-conversion? 'upcase)
-            (char-upcase c)
-            (char-downcase c))
-        c)))
-
-(define (##readtable-string-convert-case! rt s)
-  (let ((case-conversion? (macro-readtable-case-conversion? rt)))
-    (if case-conversion?
-        (if (eq? case-conversion? 'upcase)
-            (let loop ((i (- (string-length s) 1)))
-              (if (not (< i 0))
-                  (begin
-                    (string-set! s i (char-upcase (string-ref s i)))
-                    (loop (- i 1)))))
-            (let loop ((i (- (string-length s) 1)))
-              (if (not (< i 0))
-                  (begin
-                    (string-set! s i (char-downcase (string-ref s i)))
-                    (loop (- i 1)))))))))
+(define (##convert-case case-conversion? s)
+  (if case-conversion?
+      (if (eq? case-conversion? 'upcase)
+          (let loop ((i (- (string-length s) 1)))
+            (if (< i 0)
+                s
+                (begin
+                  (string-set! s i (char-upcase (string-ref s i)))
+                  (loop (- i 1)))))
+          (##string-foldcase s))
+      s))
 
 (define (##readtable-parse-keyword rt s intern? create?)
   (let ((keywords-allowed? (macro-readtable-keywords-allowed? rt)))
@@ -11737,9 +12268,6 @@
 ;; position where the datum starts.
 
 (define (##read-datum-or-label-or-none-or-dot re)
-  (macro-readenv-allow-script?-set!
-   re
-   (eq? (macro-readenv-allow-script? re) 'script))
   (let ((next (macro-peek-next-char-or-eof re)))
     (if (char? next)
         ((##readtable-char-handler (macro-readenv-readtable re) next) re next)
@@ -11769,7 +12297,7 @@
          (handlers (vector-ref lm 2)))
     (if handlers
         lm
-        (vector-ref lm 1))))
+        (macro-readenv-wrap re (vector-ref lm 1)))))
 
 (define (##label-marker-fixup-handler-add! re lm handler)
   (let ((handlers (vector-ref lm 2)))
@@ -12059,7 +12587,7 @@
                   (macro-readenv-readtable re))))
            (if (and keywords-allowed?
                     (not (eq? keywords-allowed? 'prefix))
-                    (eq? (macro-peek-next-char-or-eof re) #\:))
+                    (eqv? (macro-peek-next-char-or-eof re) #\:))
                (begin
                  (macro-read-next-char-or-eof re) ;; skip #\:
                  (string->key str))
@@ -12069,7 +12597,7 @@
                      (macro-readtable-keywords-allowed?
                       (macro-readenv-readtable re))))
                 (eq? keywords-allowed? 'prefix))
-              (eq? (macro-peek-next-char-or-eof re) #\|))
+              (eqv? (macro-peek-next-char-or-eof re) #\|))
          (macro-read-next-char-or-eof re) ;; skip #\|
          (let ((str
                 (##build-escaped-string-up-to re #\|)))
@@ -12088,16 +12616,16 @@
         (string->uninterned-symbol-object str)))
 
   (or (and intern? (string->number str 10))
-      (begin
-        (##readtable-string-convert-case!
-         (macro-readenv-readtable re)
-         str)
+      (let ((str2
+             (##convert-case
+              (macro-readenv-case-conversion? re)
+              str)))
         (or (##readtable-parse-keyword
              (macro-readenv-readtable re)
-             str
+             str2
              intern?
              #t)
-            (string->sym str)))))
+            (string->sym str2)))))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -12157,11 +12685,18 @@
                                (+ (* n 16) next-digit)
                                n))))
                   (else
-                   (if nb-digits
+                   (if (or (not nb-digits)
+                           (and (= nb-digits ##max-fixnum)
+                                (let ((next (macro-peek-next-char-or-eof re)))
+                                  (and (char? next)
+                                       (char=? next #\;)
+                                       (begin
+                                         (macro-read-next-char-or-eof re) ;; skip "next"
+                                         #t)))))
+                       (UCS-4 n)
                        (begin
                          (##raise-datum-parsing-exception 'invalid-hex-escape re)
-                         #\nul)
-                       (UCS-4 n)))))
+                         #\nul)))))
           (UCS-4 n))))
 
   (define (read-escape next)
@@ -12172,7 +12707,11 @@
            =>
            read-escape-octal)
           ((char=? next #\x)
-           (read-escape-hexadecimal #f))
+           (read-escape-hexadecimal
+            (if (macro-readtable-r7rs-compatible-read?
+                 (macro-readenv-readtable re))
+                ##max-fixnum
+                #f)))
           ((char=? next #\u)
            (read-escape-hexadecimal 4))
           ((char=? next #\U)
@@ -12200,11 +12739,11 @@
                    (make-string i))
                   ((char=? c #\\)
                    (let ((next (macro-read-next-char-or-eof re)))
-                     (if (eq? next #\newline)
+                     (if (eqv? next #\newline)
                          (let loop3 ()
                            (let ((c (macro-read-next-char-or-eof re)))
                              (if (and (char? c)
-                                      (not (eq? c #\newline))
+                                      (not (char=? c #\newline))
                                       (eq? (##readtable-char-handler
                                             (macro-readenv-readtable re)
                                             c)
@@ -12427,12 +12966,13 @@
                                        (UCS-4 n))))
                                (else
                                 #f))
-                         (let ((x
+                         (let* ((rt
+                                 (macro-readenv-readtable re))
+                                (x
                                 (##read-assoc-string=?
                                  re
                                  name
-                                 (macro-readtable-named-char-table
-                                  (macro-readenv-readtable re)))))
+                                 (macro-readtable-named-char-table rt))))
                            (if x
                                (macro-readenv-wrap re (cdr x))
                                (invalid-character-name-error))))))))))))
@@ -12445,26 +12985,55 @@
     (macro-readenv-filepos-set! re old-pos) ;; restore pos
     (##read-datum-or-label-or-none-or-dot re))) ;; read what follows comment
 
+(define (##case-conversion-set! re val)
+  (macro-readenv-case-conversion?-set! re val))
+
+(define (##read-script-line re prefix)
+  (let* ((rest-of-line
+          (##read-line (macro-readenv-port re) #\newline #f ##max-fixnum))
+         (script-line
+          (string-append prefix (if (string? rest-of-line) rest-of-line "")))
+         (language-and-tail
+          (##extract-language-and-tail script-line)))
+    (if language-and-tail
+        (let ((language (##car language-and-tail)))
+          (##readtable-setup-for-language!
+           (macro-readenv-readtable re)
+           language)))
+    (macro-readenv-script-line-set! re script-line)))
+
 (define (##read-sharp-bang re next start-pos)
   (let ((old-pos (macro-readenv-filepos re)))
+
+    (define (ignore)
+      (macro-readenv-filepos-set! re old-pos) ;; restore pos
+      (##read-datum-or-label-or-none-or-dot re))
+
     (macro-read-next-char-or-eof re) ;; skip char after #\#
-    (if (macro-readenv-allow-script? re)
-        (##script-marker)
-        (begin
-          (macro-readenv-filepos-set! re start-pos) ;; set pos to start of datum
-          (let ((name (##build-delimited-string re #\space 0)))
-            (let ((x
-                   (##read-assoc-string=?
-                    re
-                    name
-                    (macro-readtable-sharp-bang-table
-                     (macro-readenv-readtable re)))))
-              (if x
-                  (macro-readenv-wrap re (cdr x))
-                  (begin
-                    (##raise-datum-parsing-exception 'invalid-sharp-bang-name re name)
-                    (macro-readenv-filepos-set! re old-pos) ;; restore pos
-                    (##read-datum-or-label-or-none-or-dot re))))))))) ;; skip error
+    (macro-readenv-filepos-set! re start-pos) ;; set pos to start of datum
+    (let ((name (##build-delimited-string re #\space 0)))
+      (cond ((##string=? name "fold-case")
+             (##case-conversion-set! re #t)
+             (ignore))
+            ((##string=? name "no-fold-case")
+             (##case-conversion-set! re #f)
+             (ignore))
+            (else
+             (let ((x
+                    (##read-assoc-string=?
+                     re
+                     name
+                     (macro-readtable-sharp-bang-table
+                      (macro-readenv-readtable re)))))
+               (cond (x
+                      (macro-readenv-wrap re (cdr x)))
+                     ((and (eq? (macro-readenv-script-line re) #t) ;; script allowed?
+                           (eqv? start-pos 0)) ;; at start of file
+                      (##read-script-line re name)
+                      (##script-marker))
+                     (else
+                      (##raise-datum-parsing-exception 'invalid-sharp-bang-name re name)
+                      (ignore))))))))) ;; skip error
 
 (define (##read-sharp-keyword/symbol re next start-pos)
   (macro-readenv-filepos-set! re start-pos) ;; set pos to start of datum
@@ -12515,16 +13084,16 @@
     (macro-read-next-char-or-eof re) ;; skip #\' or #\` or #\,
     (macro-readenv-filepos-set! re start-pos) ;; set pos to start of datum
     (let ((keyword
-           (cond ((eq? next #\,)
+           (cond ((eqv? next #\,)
                   (let ((after-comma (macro-peek-next-char-or-eof re)))
-                    (if (eq? after-comma #\@)
+                    (if (eqv? after-comma #\@)
                         (begin
                           (macro-read-next-char-or-eof re) ;; skip #\@
                           (macro-readtable-sharp-unquote-splicing-keyword
                            (macro-readenv-readtable re)))
                         (macro-readtable-sharp-unquote-keyword
                          (macro-readenv-readtable re)))))
-                 ((eq? next #\`)
+                 ((eqv? next #\`)
                   (macro-readtable-sharp-quasiquote-keyword
                    (macro-readenv-readtable re)))
                  (else
@@ -12581,7 +13150,7 @@
       (let ((separator (macro-read-next-char-or-eof re)))
         (cond ((not (char? separator))
                (eof))
-              ((eq? separator #\<)
+              ((char=? separator #\<)
                ;; Multiline SCSH here string of the form
                ;; #<<END
                ;; hello world
@@ -12611,7 +13180,7 @@
                  (if (string? str)
                      (let ((len (string-length str)))
                        (if (and (< 0 len)
-                                (eq? (string-ref str (- len 1)) separator))
+                                (char=? (string-ref str (- len 1)) separator))
                            (begin
                              (##string-shrink! str (- len 1))
                              (macro-readenv-wrap re str))
@@ -12628,8 +13197,8 @@
       (string-set! s 0 #\0)
       (let* ((n (string->number s 10))
              (c (macro-peek-next-char-or-eof re)))
-        (cond ((or (and (not (eq? c #\#))
-                        (not (eq? c #\=)))
+        (cond ((or (and (not (eqv? c #\#))
+                        (not (eqv? c #\=)))
                    (not (macro-readtable-sharing-allowed?
                          (macro-readenv-readtable re))))
                (##wrap-op1* re
@@ -12637,7 +13206,7 @@
                             (macro-readtable-sharp-num-keyword
                              (macro-readenv-readtable re))
                             n))
-              ((eq? c #\#)
+              ((eqv? c #\#)
                (macro-read-next-char-or-eof re) ;; skip #\#
                (##label-marker-reference re n))
               (else
@@ -12697,7 +13266,7 @@
 
             (define (build-vect re kind)
               (let ((c (macro-read-next-char-or-eof re)))
-                (if (eq? c #\()
+                (if (eqv? c #\()
                     (macro-readenv-wrap re (##build-vector re kind start-pos #\)))
                     (begin
                       (##raise-datum-parsing-exception 'open-paren-expected re)
@@ -12706,7 +13275,7 @@
 
             (define (deserialize re implode);;;;;;;;;;;;;;;;;;;;;;;;;;;;
               (let ((c (macro-read-next-char-or-eof re)))
-                (if (eq? c #\()
+                (if (eqv? c #\()
                     (let* ((old-wrapper (macro-readenv-wrapper re))
                            (old-unwrapper (macro-readenv-unwrapper re)))
                       (macro-readenv-wrapper-set! re (lambda (re x) x))
@@ -12730,10 +13299,16 @@
                       (##read-datum-or-label-or-none-or-dot re))))) ;; skip error
 
             (cond ((or ;;(##read-string=? re s "#f")
-                    (string-ci=? s "#F"))
+                    (string-ci=? s "#F")
+                    (and (macro-readtable-r7rs-compatible-read?
+                          (macro-readenv-readtable re))
+                         (string-ci=? s "#FALSE")))
                    (macro-readenv-wrap re (false-obj)))
                   ((or ;;(##read-string=? re s "#t")
-                    (string-ci=? s "#T"))
+                    (string-ci=? s "#T")
+                    (and (macro-readtable-r7rs-compatible-read?
+                          (macro-readenv-readtable re))
+                         (string-ci=? s "#TRUE")))
                    (macro-readenv-wrap re #t))
                   ((##read-string=? re s "#s8")
                    (build-vect re 's8vector))
@@ -12807,16 +13382,16 @@
     (macro-read-next-char-or-eof re) ;; skip #\' or #\` or #\,
     (macro-readenv-filepos-set! re start-pos) ;; set pos to start of datum
     (let ((keyword
-           (cond ((eq? c #\,)
+           (cond ((eqv? c #\,)
                   (let ((after-comma (macro-peek-next-char-or-eof re)))
-                    (if (eq? after-comma #\@)
+                    (if (eqv? after-comma #\@)
                         (begin
                           (macro-read-next-char-or-eof re) ;; skip #\@
                           (macro-readtable-unquote-splicing-keyword
                            (macro-readenv-readtable re)))
                         (macro-readtable-unquote-keyword
                          (macro-readenv-readtable re)))))
-                 ((eq? c #\`)
+                 ((eqv? c #\`)
                   (macro-readtable-quasiquote-keyword
                    (macro-readenv-readtable re)))
                  (else
@@ -12909,10 +13484,12 @@
   (let ((start-pos (##readenv-current-filepos re)))
     (macro-read-next-char-or-eof re) ;; skip "c"
     (if (and (char=? c #\@)
-             (macro-readenv-allow-script? re)
-             (eq? (macro-peek-next-char-or-eof re) #\;))
+             (eq? (macro-readenv-script-line re) #t) ;; script allowed?
+             (eqv? start-pos 0) ;; at start of file
+             (eqv? (macro-peek-next-char-or-eof re) #\;))
         (begin
           (macro-read-next-char-or-eof re) ;; skip #\;
+          (##read-script-line re "")
           (##script-marker))
         (begin
           (macro-readenv-filepos-set! re start-pos) ;; set pos to start of datum
@@ -12931,8 +13508,7 @@
 
 (define (##read-string=? re str1 str2)
   (let ((case-conversion?
-         (macro-readtable-case-conversion?
-          (macro-readenv-readtable re))))
+         (macro-readenv-case-conversion? re)))
     (if case-conversion?
         (string-ci=? str1 str2)
         (string=? str1 str2))))
@@ -13000,7 +13576,6 @@
   (define-six-token |token.}|    -11)
   (define-six-token |token.`|    -12)
   (define-six-token |token.#|    -13)
-  (define-six-token token.script -14)
 
   (define-six-op op.!      2  rl six.x!y        six.!x           )
   (define-six-op op.++     2  rl #f             six.++x six.x++  )
@@ -13138,9 +13713,6 @@
     (parse-token-starting-with re (macro-peek-next-char-or-eof re)))
 
   (define (parse-token-starting-with re c)
-    (macro-readenv-allow-script?-set!
-     re
-     (eq? (macro-readenv-allow-script? re) 'script))
     (cond ((not (char? c))
            (##none-marker))
           ((eq? (##readtable-char-handler (macro-readenv-readtable re) c)
@@ -13351,9 +13923,13 @@
                               ((char=? c #\`)
                                (one-char-token |token.`|))
                               ((char=? c #\#)
-                               (if (and (macro-readenv-allow-script? re)
+                               (if (and (eq? (macro-readenv-script-line re) #t) ;; script allowed?
+                                        (eqv? start-pos 0) ;; at start of file
                                         (char=? x #\!))
-                                   (two-char-token (##script-marker))
+                                   (begin
+                                     (macro-read-next-char-or-eof re);;skip #\!
+                                     (##read-script-line re "")
+                                     (##script-marker))
                                    (one-char-token |token.#|)))
                               ((decimal-digit? c)
                                (token (parse-number re #\0 c)))
@@ -13361,10 +13937,12 @@
                                (token (parse-identifier re c)))))))
 
                    ((char=? c #\@)
-                    (if (and (macro-readenv-allow-script? re)
-                             (eq? (macro-peek-next-char-or-eof re) #\;))
+                    (if (and (eq? (macro-readenv-script-line re) #t) ;; script allowed?
+                             (eqv? start-pos 0) ;; at start of file
+                             (eqv? (macro-peek-next-char-or-eof re) #\;))
                         (begin
-                          (macro-read-next-char-or-eof re) ;; skip #\;
+                          (macro-read-next-char-or-eof re);;skip #\;
+                          (##read-script-line re "")
                           (##script-marker))
                         (##none-marker)))
 
@@ -14438,20 +15016,22 @@
 
 ;;; Setup the standard readtable.
 
-(define (##make-standard-readtable)
+(define (##make-standard-readtable #!optional (r7rs-syntax? #t))
   (let ((rt
          (macro-make-readtable
           #f ;; preserve case in symbols, character names, etc
           #t ;; keywords ending with ":" are allowed
           ##standard-escaped-char-table
-          ##standard-named-char-table
+          (if r7rs-syntax?
+              ##standard-named-char-table
+              (##cddr ##standard-named-char-table))
           ##standard-sharp-bang-table
           (##make-chartable #f) ;; all chars are non-delimiters
           (##make-chartable ##read-number/keyword/symbol)
           (##make-chartable ##read-sharp-other)
           #f                 ;; max-unescaped-char
           #t                 ;; escape-ctrl-chars?
-          #f                 ;; sharing-allowed?
+          'default           ;; sharing-allowed?
           #f                 ;; eval-allowed?
           #f                 ;; write-extended-read-macros?
           #f                 ;; write-cdr-read-macros?
@@ -14476,6 +15056,8 @@
           ##six-type?        ;; six-type?
           #t                 ;; r6rs-compatible-read?
           #t                 ;; r6rs-compatible-write?
+          r7rs-syntax?       ;; r7rs-compatible-read?
+          r7rs-syntax?       ;; r7rs-compatible-write?
           'multiline         ;; here-strings-allowed?
           #t                 ;; dot-at-head-of-list-allowed?
           #f                 ;; comment-handler

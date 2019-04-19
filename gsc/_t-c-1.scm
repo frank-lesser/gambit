@@ -2,7 +2,7 @@
 
 ;;; File: "_t-c-1.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 (include "fixnum.scm")
 
@@ -40,8 +40,8 @@
 ;; nb-arg-regs = maximum number of arguments passed in registers
 ;;               1 <= nb-arg-regs <= min( 12, nb-gvm-regs-2 )
 
-(define targ-default-nb-gvm-regs 5)
-(define targ-default-nb-arg-regs 3)
+(define targ-default-nb-gvm-regs 5) ;; default value of nb-gvm-regs
+(define targ-default-nb-arg-regs 3) ;; default value of nb-arg-regs
 
 (define (targ-nb-gvm-regs) (target-nb-regs targ-target))
 (define (targ-nb-arg-regs) (target-nb-arg-regs targ-target))
@@ -131,7 +131,7 @@
 (define targ-box-space         (targ-max-words (* 2 targ-min-word-size)))
 (define targ-will-space        (targ-max-words (* 4 targ-min-word-size)))
 (define targ-flonum-space      (targ-max-words 16))
-(define targ-promise-space     (targ-max-words (* 3 targ-min-word-size)))
+(define targ-delay-promise-space (targ-max-words (* 5 targ-min-word-size)))
 (define targ-continuation-space(targ-max-words (* 3 targ-min-word-size)))
 (define targ-ratnum-space      (targ-max-words (* 3 targ-min-word-size)))
 (define targ-cpxnum-space      (targ-max-words (* 3 targ-min-word-size)))
@@ -359,6 +359,8 @@
 (define targ-fp-cache #f) ; floating point number cache
 (define targ-fr-cell #f)  ; cell of floating point region start
 
+(define targ-sharing-table #f) ; table for compacting meta-information
+
 (define (targ-heap-begin!)
   (set! targ-glo-vars         (make-table 'test: eq?))
   (set! targ-lbl-alloc        0)
@@ -374,6 +376,7 @@
   (set! targ-module-wr-res    (make-stretchable-vector #f))
   (set! targ-fp-cache #f)
   (set! targ-fr-cell #f)
+  (set! targ-sharing-table    (make-table))
   #f)
 
 (define (targ-heap-end!)
@@ -391,6 +394,7 @@
   (set! targ-module-wr-res #f)
   (set! targ-fp-cache #f)
   (set! targ-fr-cell #f)
+  (set! targ-sharing-table #f)
   #f)
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

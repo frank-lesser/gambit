@@ -1,6 +1,6 @@
 /* File: "os.h" */
 
-/* Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved. */
+/* Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved. */
 
 #ifndef ___OS_H
 #define ___OS_H
@@ -67,6 +67,13 @@
 /*---------------------------------------------------------------------------*/
 
 /*
+ * Build with support for long paths.
+ */
+
+#define ___SUPPORT_LONG_PATH
+
+
+/*
  * We assume that the following basic features are available
  * regardless of the operating-system... otherwise we are in real
  * trouble!
@@ -108,6 +115,24 @@
 
 /* avoid using these functions in favour of the Windows equivalents */
 
+#ifdef HAVE_OPEN
+#define USE_open
+#ifdef ___SUPPORT_LONG_PATH
+#ifdef HAVE_OPENAT
+#define USE_openat
+#endif
+#endif
+#endif
+
+#ifdef HAVE_OPENDIR
+#define USE_opendir
+#ifdef USE_openat
+#ifdef HAVE_FDOPENDIR
+#define USE_fdopendir
+#endif
+#endif
+#endif
+
 #ifdef HAVE_REMOVE
 #define USE_remove_dir
 #define USE_remove_file
@@ -115,14 +140,20 @@
 
 #ifdef HAVE_RENAME
 #define USE_rename
+#ifdef USE_openat
+#ifdef HAVE_RENAMEAT
+#define USE_renameat
+#endif
+#endif
 #endif
 
 #ifdef HAVE_MKDIR
 #define USE_mkdir
+#ifdef USE_openat
+#ifdef HAVE_MKDIRAT
+#define USE_mkdirat
 #endif
-
-#ifdef HAVE_OPENDIR
-#define USE_opendir
+#endif
 #endif
 
 #if defined(HAVE_STAT64) && defined(HAVE_STRUCT_STAT64) && !(defined(__MACOSX__) || (defined(__APPLE__) && defined(__MACH__)))
@@ -138,9 +169,18 @@
 #define ___stat stat
 #define ___lstat lstat
 #define ___fstat fstat
+#ifdef USE_openat
+#ifdef HAVE_FSTATAT
+#define USE_fstatat
+#endif
+#endif
 #endif
 #endif
 
+#endif
+
+#ifdef HAVE_GETCWD
+#define USE_getcwd
 #endif
 
 #ifdef HAVE_SNPRINTF
@@ -153,8 +193,6 @@
 #ifdef USE_POSIX
 
 #define USE_FDSET_RESIZING
-
-#define USE_open
 
 /* Select features based on availability */
 
@@ -196,10 +234,20 @@
 
 #ifdef HAVE_LINK
 #define USE_link
+#ifdef USE_openat
+#ifdef HAVE_LINKAT
+#define USE_linkat
+#endif
+#endif
 #endif
 
 #ifdef HAVE_MKFIFO
 #define USE_mkfifo
+#ifdef USE_openat
+#ifdef HAVE_MKFIFOAT
+#define USE_mkfifoat
+#endif
+#endif
 #endif
 
 #ifdef HAVE_RMDIR
@@ -217,6 +265,11 @@
 
 #ifdef HAVE_SYMLINK
 #define USE_symlink
+#ifdef USE_openat
+#ifdef HAVE_SYMLINKAT
+#define USE_symlinkat
+#endif
+#endif
 #endif
 
 #ifdef HAVE_SYSCONF
@@ -251,6 +304,11 @@
 
 #ifdef HAVE_UNLINK
 #define USE_unlink
+#ifdef USE_openat
+#ifdef HAVE_UNLINKAT
+#define USE_unlinkat
+#endif
+#endif
 #endif
 
 #ifdef HAVE_WAITPID
@@ -555,6 +613,22 @@
 #endif
 
 
+/* Determine how to get the executable's path.  */
+
+#ifdef HAVE__NSGETEXECUTABLEPATH
+#define USE__NSGetExecutablePath
+#else
+#ifdef HAVE_READLINK
+#define USE_readlink
+#ifdef USE_openat
+#ifdef HAVE_READLINKAT
+#define USE_readlinkat
+#endif
+#endif
+#endif
+#endif
+
+
 /* Determine which function to use for miscellaneous networking features.  */
 
 #ifdef USE_NETWORKING
@@ -830,6 +904,11 @@ ___END_C_LINKAGE
 #define INCLUDE_unistd_h
 #endif
 
+#ifdef USE_getcwd
+#undef INCLUDE_unistd_h
+#define INCLUDE_unistd_h
+#endif
+
 #ifdef USE_ioctl
 #undef INCLUDE_sys_ioctl_h
 #define INCLUDE_sys_ioctl_h
@@ -953,6 +1032,16 @@ ___END_C_LINKAGE
 #ifdef USE_NSLinkModule
 #undef INCLUDE_mach_o_dyld_h
 #define INCLUDE_mach_o_dyld_h
+#endif
+
+#ifdef USE__NSGetExecutablePath
+#undef INCLUDE_mach_o_dyld_h
+#define INCLUDE_mach_o_dyld_h
+#endif
+
+#ifdef USE_readlink
+#undef INCLUDE_unistd_h
+#define INCLUDE_unistd_h
 #endif
 
 #ifdef USE_signal

@@ -1,13 +1,13 @@
 /* File: "actlog.c" */
 
-/* Copyright (c) 2016-2017 by Marc Feeley, All Rights Reserved. */
+/* Copyright (c) 2016-2018 by Marc Feeley, All Rights Reserved. */
 
 /*
  * This module implements the creation of activity logs.
  */
 
 #define ___INCLUDED_FROM_ACTLOG
-#define ___VERSION 409000
+#define ___VERSION 409003
 #include "gambit.h"
 
 #include "os_base.h"
@@ -120,7 +120,7 @@ ___virtual_machine_state ___vms;)
 
   if (___vms->actlog.auto_dump)
     {
-      ___actlog_stop_pstate (&___vms->pstate[0]);
+      ___actlog_stop_pstate (___PSTATE_FROM_PROCESSOR_ID(0,___vms));
       ___actlog_dump (___vms, NULL);
     }
 
@@ -469,7 +469,7 @@ char *filename;)
 
   for (i=0; i<___vms->actlog.max_processor_count; i++)
     {
-      ___processor_state ___ps = &___vms->pstate[i];
+      ___processor_state ___ps = ___PSTATE_FROM_PROCESSOR_ID(i,___vms);
       ___actlog_transition *ptr = ___ps->actlog.transitions + ___MAX_NB_ACTLOG_TRANSITIONS;
       ___actlog_transition *last = ___ps->actlog.last;
 

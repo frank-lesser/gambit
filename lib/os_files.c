@@ -1,6 +1,6 @@
 /* File: "os_files.c" */
 
-/* Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved. */
+/* Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved. */
 
 /*
  * This module implements the operating system specific routines
@@ -8,7 +8,7 @@
  */
 
 #define ___INCLUDED_FROM_OS_FILES
-#define ___VERSION 409000
+#define ___VERSION 409003
 #include "gambit.h"
 
 #include "os_base.h"
@@ -420,6 +420,511 @@ FSSpec dst_spec;)
 
 /*---------------------------------------------------------------------------*/
 
+/* Filesystem operations supporting long paths. */
+
+
+#ifdef USE_getcwd
+
+char *getcwd_long_path
+   ___P((char *buf,
+         ___SIZE_T size),
+        (buf,
+         size)
+char *buf;
+___SIZE_T size;)
+{
+  int e;
+
+  if (getcwd (buf, size) != 0)
+    return buf;
+
+  while (errno == ERANGE)
+    {
+      ___SIZE_T old_size = size;
+      e = errno;
+      size = size << 1;
+      if ((size >> 1) != old_size ||
+          (buf = ___CAST(char*, ___ALLOC_MEM(size))) == 0)
+        {
+          errno = e;
+          return 0;
+        }
+      if (getcwd (buf, size) != 0)
+        return buf;
+      e = errno;
+      ___FREE_MEM(buf);
+      errno = e;
+    }
+
+  return 0;
+}
+
+#endif
+
+
+#ifdef USE_chdir
+
+int chdir_long_path
+   ___P((char *path),
+        (path)
+char *path;)
+{
+  char *start = path;
+  char *probe = start;
+  char *last_sep = NULL;
+  char c;
+
+  if (*probe == '/') probe++;
+
+  for (;;)
+    {
+      if (last_sep != NULL && probe - start > ___PATH_MAX_LENGTH)
+        {
+          int result;
+          *last_sep = '\0';
+          result = chdir (start);
+          *last_sep = '/';
+          if (result != 0)
+            return result;
+          start = last_sep+1;
+          last_sep = NULL;
+        }
+      if ((c = *probe) == '\0')
+        break;
+      else if (c == '/')
+        last_sep = probe;
+      probe++;
+    }
+
+  return chdir (start);
+}
+
+#endif
+
+
+#ifdef USE_openat
+
+void at_close_dir
+   ___P((int dir),
+        (dir)
+int dir;)
+{
+  if (dir != AT_FDCWD)
+    {
+      int save = errno;
+      close (dir);
+      errno = save;
+    }
+}
+
+char *at_long_path
+   ___P((int *dir_ret,
+         char *path),
+        (dir_ret,
+         path)
+int *dir_ret;
+char *path;)
+{
+  int dir = AT_FDCWD;
+  char *start = path;
+  char *probe = start;
+  char *last_sep = NULL;
+  char c;
+
+  if (*probe == '/') probe++;
+
+  for (;;)
+    {
+      if (last_sep != NULL && probe - start > ___PATH_MAX_LENGTH)
+        {
+          int new_dir;
+          *last_sep = '\0';
+          new_dir = openat (dir, start, O_DIRECTORY);
+          at_close_dir (dir);
+          *last_sep = '/';
+          if (new_dir < 0)
+            return NULL;
+          dir = new_dir;
+          start = last_sep+1;
+          last_sep = NULL;
+        }
+      if ((c = *probe) == '\0')
+        break;
+      else if (c == '/')
+        last_sep = probe;
+      probe++;
+    }
+
+  *dir_ret = dir;
+
+  return start;
+}
+
+#endif
+
+
+#ifdef USE_open
+
+int open_long_path
+   ___P((char *path,
+         int flags,
+         mode_t mode),
+        (path,
+         flags,
+         mode)
+char *path;
+int flags;
+mode_t mode;)
+{
+#ifdef USE_openat
+
+  int fd = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      fd = openat (dir, path2, flags, mode);
+      at_close_dir (dir);
+    }
+
+  return fd;
+
+#else
+
+  return open (path, flags, mode);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_mkfifo
+
+int mkfifo_long_path
+   ___P((char *path,
+         mode_t mode),
+        (path,
+         mode)
+char *path;
+mode_t mode;)
+{
+#ifdef USE_mkfifoat
+
+  int result = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      result = mkfifoat (dir, path2, mode);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  return mkfifo (path, mode);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_mkdir
+
+int mkdir_long_path
+   ___P((char *path,
+         mode_t mode),
+        (path,
+         mode)
+char *path;
+mode_t mode;)
+{
+#ifdef USE_mkdirat
+
+  int result = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      result = mkdirat (dir, path2, mode);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  return mkdir (path, mode);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_unlink
+
+int unlink_long_path
+   ___P((char *path),
+        (path)
+char *path;)
+{
+#ifdef USE_unlinkat
+
+  int result = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      result = unlinkat (dir, path2, 0);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  return unlink (path);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_link
+
+int link_long_path
+   ___P((char *oldpath,
+         char *newpath),
+        (oldpath,
+         newpath)
+char *oldpath;
+char *newpath;)
+{
+#ifdef USE_linkat
+
+  int result = -1;
+  int olddir;
+  int newdir;
+  char *oldpath2;
+  char *newpath2;
+
+  if ((oldpath2 = at_long_path (&olddir, oldpath)) != NULL)
+    {
+      if ((newpath2 = at_long_path (&newdir, newpath)) != NULL)
+        {
+          result = linkat (olddir, oldpath2, newdir, newpath2, 0);
+          at_close_dir (newdir);
+        }
+      at_close_dir (olddir);
+    }
+
+  return result;
+
+#else
+
+  return link (oldpath, newpath);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_symlink
+
+int symlink_long_path
+   ___P((char *target,
+         char *path),
+        (target,
+         path)
+char *target;
+char *path;)
+{
+#ifdef USE_symlinkat
+
+  int result = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      result = symlinkat (target, dir, path2);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  return symlink (target, path);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_readlink
+
+___SSIZE_T readlink_long_path
+   ___P((char *path,
+         char *buf,
+         ___SIZE_T bufsize),
+        (path,
+         buf,
+         bufsize)
+char *path;
+char *buf;
+___SIZE_T bufsize;)
+{
+#ifdef USE_readlinkat
+
+  ___SSIZE_T result = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      result = readlinkat (dir, path2, buf, bufsize);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  return readlink (path, buf, bufsize);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_rename
+
+int rename_long_path
+   ___P((char *oldpath,
+         char *newpath),
+        (oldpath,
+         newpath)
+char *oldpath;
+char *newpath;)
+{
+#ifdef USE_renameat
+
+  int result = -1;
+  int olddir;
+  int newdir;
+  char *oldpath2;
+  char *newpath2;
+
+  if ((oldpath2 = at_long_path (&olddir, oldpath)) != NULL)
+    {
+      if ((newpath2 = at_long_path (&newdir, newpath)) != NULL)
+        {
+          result = renameat (olddir, oldpath2, newdir, newpath2);
+          at_close_dir (newdir);
+        }
+      at_close_dir (olddir);
+    }
+
+  return result;
+
+#else
+
+  return rename (oldpath, newpath);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_opendir
+
+DIR *opendir_long_path
+   ___P((char *path),
+        (path)
+char *path;)
+{
+#ifdef USE_fdopendir
+
+  DIR *result = NULL;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      int fd = openat (dir, path2, O_DIRECTORY);
+      if (fd >= 0)
+        result = fdopendir (fd);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  return opendir (path);
+
+#endif
+}
+
+#endif
+
+
+#ifdef USE_stat
+
+int stat_long_path
+   ___P((char *path,
+         ___struct_stat *statbuf,
+         ___BOOL follow),
+        (path,
+         statbuf,
+         follow)
+char *path;
+___struct_stat *statbuf;
+___BOOL follow;)
+{
+#ifdef USE_fstatat
+
+  int result = -1;
+  int dir;
+  char *path2;
+
+  if ((path2 = at_long_path (&dir, path)) != NULL)
+    {
+      result = fstatat (dir, path2, statbuf, follow ? 0 : AT_SYMLINK_NOFOLLOW);
+      at_close_dir (dir);
+    }
+
+  return result;
+
+#else
+
+  if (follow)
+    return ___stat (path, statbuf);
+  else
+    return ___lstat (path, statbuf);
+
+#endif
+}
+
+#endif
+
+
+/*---------------------------------------------------------------------------*/
+
 /* Filesystem path expansion. */
 
 
@@ -627,7 +1132,7 @@ ___SCMOBJ ___os_path_gambitdir ___PVOID
 #endif
 
 
-/* 
+/*
  * TODO: the current implementation of the lookup duplicates the
  * lookup logic because the configuration map and the map from the
  * runtime options are not represented with the same string type.  The
@@ -874,31 +1379,38 @@ ___SCMOBJ path;)
 #ifdef USE_POSIX
 
       ___CHAR_TYPE(___PATH_CE_SELECT) old_dir[___PATH_MAX_LENGTH+1+1];
+      ___STRING_TYPE(___PATH_CE_SELECT) odir = 0;
       ___CHAR_TYPE(___PATH_CE_SELECT) normalized_dir[___PATH_MAX_LENGTH+1+1];
+      ___STRING_TYPE(___PATH_CE_SELECT) ndir = 0;
 
-      dir = normalized_dir;
+      ___MUTEX_LOCK(___files_mod.cwd_mut);
 
-      if (getcwd (old_dir, ___PATH_MAX_LENGTH) == 0)
+      if ((odir = getcwd_long_path (old_dir, ___PATH_MAX_LENGTH)) == 0)
         e = err_code_from_errno ();
       else
         {
           if (p == 0)
-            dir = old_dir;
+            dir = odir;
           else
             {
-              if (chdir (p) < 0)
+              if (chdir_long_path (p) < 0)
                 e = err_code_from_errno ();
               else
                 {
-                  if (getcwd (normalized_dir, ___PATH_MAX_LENGTH) == 0)
+                  if ((ndir = getcwd_long_path (normalized_dir, ___PATH_MAX_LENGTH)) == 0)
                     e = err_code_from_errno ();
                   else
-                    e = ___FIX(___NO_ERR);
-                  if (chdir (old_dir) < 0 && e == ___FIX(___NO_ERR))
+                    {
+                      e = ___FIX(___NO_ERR);
+                      dir = ndir;
+                    }
+                  if (chdir_long_path (odir) < 0 && e == ___FIX(___NO_ERR))
                     e = err_code_from_errno ();
                 }
             }
         }
+
+      ___MUTEX_UNLOCK(___files_mod.cwd_mut);
 
       if (e != ___FIX(___NO_ERR))
         result = e;
@@ -928,6 +1440,12 @@ ___SCMOBJ path;)
           else
             ___release_scmobj (result);
         }
+
+      if (odir != 0 && odir != old_dir)
+        ___FREE_MEM(odir);
+
+      if (ndir != 0 && ndir != normalized_dir)
+        ___FREE_MEM(ndir);
 
 #endif
 
@@ -1005,6 +1523,147 @@ ___SCMOBJ path;)
 
 /*---------------------------------------------------------------------------*/
 
+
+___SCMOBJ ___os_executable_path ___PVOID
+{
+  ___SCMOBJ e;
+  ___SCMOBJ result = ___FIX(___UNIMPL_ERR);
+
+  ___CHAR_TYPE(___PATH_CE_SELECT) path_buf[___PATH_MAX_LENGTH+1];
+  char *path = NULL;
+
+#ifdef USE_GetModuleFileName
+
+  DWORD n;
+
+  path = path_buf;
+
+  n = GetModuleFileName (NULL, path, ___PATH_MAX_LENGTH+1);
+
+  if (n >= 0 && n < ___PATH_MAX_LENGTH+1) goto convert_path;
+
+  return fnf_or_err_code_from_GetLastError ();
+
+#else
+
+#ifdef USE__NSGetExecutablePath
+
+  uint32_t bufsize = sizeof (path_buf);
+
+  path = path_buf;
+
+  if (_NSGetExecutablePath (path, &bufsize) < 0)
+    {
+      path = ___CAST(char*,malloc (bufsize));
+      if (path == NULL)
+        result = ___FIX(___CTOS_HEAP_OVERFLOW_ERR+___RETURN_POS);
+      else if (_NSGetExecutablePath (path, &bufsize) < 0)
+        {
+          result = err_code_from_errno ();
+          free (path);
+          path = NULL;
+        }
+    }
+
+#else
+
+#if defined (USE_sysctl) && defined (CTL_KERN) && defined (KERN_PROC) && defined (KERN_PROC_PATHNAME)
+
+  {
+    // Each row has the format: nb_args, arg1, ..., argn
+    int mibs[] = {
+#if defined(KERN_PROC_ARGS)
+      4, CTL_KERN, KERN_PROC_ARGS, -1, KERN_PROC_PATHNAME,
+#endif
+      4, CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1,
+      0
+    };
+    int *mibs_probe = mibs;
+    size_t cb = sizeof (path_buf);
+
+    path = path_buf;
+    while (*mibs_probe != 0)
+      {
+        if (sysctl (mibs_probe+1, *mibs_probe, path, &cb, NULL, 0) != -1) goto convert_path;
+        mibs_probe += *mibs_probe + 1;
+      }
+
+#if !(defined (USE_readlink) && defined (USE_getpid))
+    return err_code_from_errno ();
+#endif
+  }
+
+#endif
+
+#if defined (USE_readlink) && defined (USE_getpid)
+
+  {
+    pid_t pid = getpid ();
+
+    static char *procfs_paths_to_try[] =
+      {
+       "/proc/%d/exe",
+       "/proc/%d/file",
+       "/proc/%d/path/a.out",
+       NULL
+      };
+
+    char **probe = procfs_paths_to_try;
+
+    while (*probe != NULL)
+      {
+        ___SSIZE_T size;
+        char p[100];
+
+        snprintf(p, sizeof (p), *probe++, pid);
+
+        size = readlink_long_path (p, path_buf, sizeof (path_buf));
+
+        if (size >= 0)
+          {
+            path_buf[size] = '\0';
+            path = path_buf;
+            goto convert_path;
+          }
+      }
+
+    return err_code_from_errno ();
+  }
+
+#else
+
+  return ___FIX(___UNIMPL_ERR);
+
+#endif
+
+#endif
+
+#endif
+
+ convert_path:
+
+  if (path != NULL)
+    {
+      if ((e = ___NONNULLSTRING_to_SCMOBJ
+                 (___PSTATE,
+                  path,
+                  &result,
+                  ___RETURN_POS,
+                  ___CE(___PATH_CE_SELECT)))
+          != ___FIX(___NO_ERR))
+        result = e;
+      else
+        ___release_scmobj (result);
+      if (path != path_buf)
+        free (path);
+    }
+
+  return result;
+}
+
+
+/*---------------------------------------------------------------------------*/
+
 /* File system operations. */
 
 
@@ -1038,7 +1697,7 @@ ___SCMOBJ mode;)
               0))
       == ___FIX(___NO_ERR))
     {
-      if (mkdir (___CAST(___STRING_TYPE(___CREATE_DIRECTORY_PATH_CE_SELECT),cpath), ___INT(mode)) < 0)
+      if (mkdir_long_path (___CAST(___STRING_TYPE(___CREATE_DIRECTORY_PATH_CE_SELECT),cpath), ___INT(mode)) < 0)
         e = fnf_or_err_code_from_errno ();
       ___release_string (cpath);
     }
@@ -1100,7 +1759,7 @@ ___SCMOBJ mode;)
               0))
       == ___FIX(___NO_ERR))
     {
-      if (mkfifo (___CAST(___STRING_TYPE(___CREATE_FIFO_PATH_CE_SELECT),cpath), ___INT(mode)) < 0)
+      if (mkfifo_long_path (___CAST(___STRING_TYPE(___CREATE_FIFO_PATH_CE_SELECT),cpath), ___INT(mode)) < 0)
         e = fnf_or_err_code_from_errno ();
       ___release_string (cpath);
     }
@@ -1149,8 +1808,8 @@ ___SCMOBJ path2;)
                   0))
           == ___FIX(___NO_ERR))
         {
-          if (link (___CAST(___STRING_TYPE(___CREATE_LINK_PATH_CE_SELECT),cpath1),
-                    ___CAST(___STRING_TYPE(___CREATE_LINK_PATH_CE_SELECT),cpath2))
+          if (link_long_path (___CAST(___STRING_TYPE(___CREATE_LINK_PATH_CE_SELECT),cpath1),
+                              ___CAST(___STRING_TYPE(___CREATE_LINK_PATH_CE_SELECT),cpath2))
               < 0)
             e = fnf_or_err_code_from_errno ();
           ___release_string (cpath2);
@@ -1202,8 +1861,8 @@ ___SCMOBJ path2;)
                   0))
           == ___FIX(___NO_ERR))
         {
-          if (symlink (___CAST(___STRING_TYPE(___CREATE_SYMLINK_PATH_CE_SELECT),cpath1),
-                       ___CAST(___STRING_TYPE(___CREATE_SYMLINK_PATH_CE_SELECT),cpath2))
+          if (symlink_long_path (___CAST(___STRING_TYPE(___CREATE_SYMLINK_PATH_CE_SELECT),cpath1),
+                                 ___CAST(___STRING_TYPE(___CREATE_SYMLINK_PATH_CE_SELECT),cpath2))
               < 0)
             e = fnf_or_err_code_from_errno ();
           ___release_string (cpath2);
@@ -1397,8 +2056,8 @@ ___SCMOBJ path2;)
                   0))
           == ___FIX(___NO_ERR))
         {
-          if (rename (___CAST(___STRING_TYPE(___RENAME_FILE_PATH_CE_SELECT),cpath1),
-                      ___CAST(___STRING_TYPE(___RENAME_FILE_PATH_CE_SELECT),cpath2))
+          if (rename_long_path (___CAST(___STRING_TYPE(___RENAME_FILE_PATH_CE_SELECT),cpath1),
+                                ___CAST(___STRING_TYPE(___RENAME_FILE_PATH_CE_SELECT),cpath2))
               < 0)
             e = fnf_or_err_code_from_errno ();
           ___release_string (cpath2);
@@ -1490,23 +2149,25 @@ ___SCMOBJ path2;)
           int fd1;
           int fd2;
 
-          if ((fd1 = open (___CAST(___STRING_TYPE(___COPY_FILE_PATH_CE_SELECT),
-                                   cpath1),
+          if ((fd1 = open_long_path
+                       (___CAST(___STRING_TYPE(___COPY_FILE_PATH_CE_SELECT),
+                                cpath1),
 #ifdef O_BINARY
-                           O_BINARY|
+                        O_BINARY|
 #endif
-                           O_RDONLY,
-                           0777)) < 0)
+                        O_RDONLY,
+                        0777)) < 0)
             e = fnf_or_err_code_from_errno ();
           else
             {
-              if ((fd2 = open (___CAST(___STRING_TYPE(___COPY_FILE_PATH_CE_SELECT),
-                                       cpath2),
+              if ((fd2 = open_long_path
+                           (___CAST(___STRING_TYPE(___COPY_FILE_PATH_CE_SELECT),
+                                    cpath2),
 #ifdef O_BINARY
-                               O_BINARY|
+                            O_BINARY|
 #endif
-                               O_WRONLY|O_CREAT|O_EXCL,
-                               0777)) < 0)
+                            O_WRONLY|O_CREAT|O_EXCL,
+                            0777)) < 0)
                 e = fnf_or_err_code_from_errno ();
               else
                 {
@@ -1541,8 +2202,8 @@ ___SCMOBJ path2;)
               if (close (fd1) < 0 && e != ___FIX(___NO_ERR))
                 {
                   e = err_code_from_errno ();
-                  unlink (___CAST(___STRING_TYPE(___COPY_FILE_PATH_CE_SELECT),
-                                  cpath2));
+                  unlink_long_path (___CAST(___STRING_TYPE(___COPY_FILE_PATH_CE_SELECT),
+                                            cpath2));
                 }
             }
           ___release_string (cpath2);
@@ -1692,7 +2353,7 @@ ___SCMOBJ path;)
               0))
       == ___FIX(___NO_ERR))
     {
-      if (unlink (___CAST(___STRING_TYPE(___DELETE_FILE_PATH_CE_SELECT),cpath))
+      if (unlink_long_path (___CAST(___STRING_TYPE(___DELETE_FILE_PATH_CE_SELECT),cpath))
           < 0)
         e = fnf_or_err_code_from_errno ();
       ___release_string (cpath);
@@ -1757,6 +2418,7 @@ ___SCMOBJ ___setup_files_module ___PVOID
   if (!___files_mod.setup)
     {
       ___files_mod.setup = 1;
+      ___MUTEX_INIT(___files_mod.cwd_mut);
       return ___FIX(___NO_ERR);
     }
 
@@ -1769,6 +2431,7 @@ void ___cleanup_files_module ___PVOID
   if (___files_mod.setup)
     {
       ___files_mod.setup = 0;
+      ___MUTEX_DESTROY(___files_mod.cwd_mut);
     }
 }
 

@@ -2,7 +2,7 @@
 
 ;;; File: "gambit#.scm"
 
-;;; Copyright (c) 2005-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 2005-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -34,7 +34,12 @@ receive
 time
 cond-expand
 define-cond-expand-feature
+case-lambda
 letrec*
+when
+unless
+syntax-error
+delay-force
 
 ;; global variable
 default-random-source
@@ -66,6 +71,7 @@ append-vectors
 arithmetic-shift
 asinh
 atanh
+binary-port?
 bit-count
 bit-set?
 bitwise-and
@@ -73,9 +79,18 @@ bitwise-ior
 bitwise-merge
 bitwise-not
 bitwise-xor
+boolean=?
 box
 box?
 break
+bytevector
+bytevector-append
+bytevector-copy
+bytevector-copy!
+bytevector-length
+bytevector-u8-ref
+bytevector-u8-set!
+bytevector?
 call-with-input-process
 call-with-input-string
 call-with-input-u8vector
@@ -84,12 +99,15 @@ call-with-output-process
 call-with-output-string
 call-with-output-u8vector
 call-with-output-vector
+call-with-port
 call/cc
 cfun-conversion-exception-arguments
 cfun-conversion-exception-code
 cfun-conversion-exception-message
 cfun-conversion-exception-procedure
 cfun-conversion-exception?
+char-foldcase
+circular-list
 clear-bit-field
 close-port
 command-line
@@ -103,6 +121,7 @@ condition-variable-specific-set!
 condition-variable?
 configure-command-string
 conjugate
+cons*
 console-port
 continuation-capture
 continuation-graft
@@ -119,8 +138,10 @@ create-symbolic-link
 current-directory
 current-error-port
 current-exception-handler
+current-jiffy
 current-processor
 current-readtable
+current-second
 current-thread
 current-time
 current-user-interrupt-handler
@@ -132,6 +153,7 @@ deadlock-exception?
 defer-user-interrupts
 delete-directory
 delete-file
+digit-value
 directory-files
 display-continuation-backtrace
 display-continuation-dynamic-environment
@@ -144,6 +166,9 @@ display-procedure-environment
 divide-by-zero-exception-arguments
 divide-by-zero-exception-procedure
 divide-by-zero-exception?
+drop
+emergency-exit
+eof-object
 eq?-hash
 equal?-hash
 eqv?-hash
@@ -152,6 +177,13 @@ error
 error-exception-message
 error-exception-parameters
 error-exception?
+error-object-irritants
+error-object-message
+error-object?
+exact
+exact-integer?
+exact-integer-sqrt
+executable-path
 exit
 expression-parsing-exception-kind
 expression-parsing-exception-parameters
@@ -162,9 +194,11 @@ f32vector
 f32vector->list
 f32vector-append
 f32vector-copy
+f32vector-copy!
 f32vector-fill!
 f32vector-length
 f32vector-ref
+f32vector-set
 f32vector-set!
 f32vector-shrink!
 f32vector?
@@ -172,15 +206,19 @@ f64vector
 f64vector->list
 f64vector-append
 f64vector-copy
+f64vector-copy!
 f64vector-fill!
 f64vector-length
 f64vector-ref
+f64vector-set
 f64vector-set!
 f64vector-shrink!
 f64vector?
+features
 file-attributes
 file-creation-time
 file-device
+file-error?
 file-exists?
 file-group
 file-info
@@ -241,6 +279,7 @@ flexpm1
 flexpt
 flfinite?
 flfloor
+flhypot
 flilogb
 flinfinite?
 flinteger?
@@ -253,6 +292,9 @@ flnegative?
 flnumerator
 flodd?
 flonum?
+floor-quotient
+floor-remainder
+floor/
 flpositive?
 flround
 flscalbn
@@ -263,7 +305,10 @@ flsquare
 fltan
 fltanh
 fltruncate
+flush-output-port
 flzero?
+fold
+fold-right
 force-output
 foreign-address
 foreign-release!
@@ -314,6 +359,9 @@ fxzero?
 gc-report-set!
 generate-proper-tail-calls
 gensym
+get-environment-variable
+get-environment-variables
+get-output-bytevector
 get-output-string
 get-output-u8vector
 get-output-vector
@@ -333,13 +381,10 @@ host-info-name
 host-info?
 host-name
 identity
-improper-length-list-exception-arg-num
-improper-length-list-exception-arguments
-improper-length-list-exception-procedure
-improper-length-list-exception?
 inactive-thread-exception-arguments
 inactive-thread-exception-procedure
 inactive-thread-exception?
+inexact
 infinite?
 initialized-thread-exception-arguments
 initialized-thread-exception-procedure
@@ -350,6 +395,7 @@ input-port-char-position
 input-port-characters-buffered
 input-port-column
 input-port-line
+input-port-open?
 input-port-readtable
 input-port-readtable-set!
 input-port-timeout-set!
@@ -359,6 +405,11 @@ integer-sqrt
 invalid-hash-number-exception-arguments
 invalid-hash-number-exception-procedure
 invalid-hash-number-exception?
+invalid-utf8-encoding-exception-arguments
+invalid-utf8-encoding-exception-procedure
+invalid-utf8-encoding-exception?
+iota
+jiffies-per-second
 join-timeout-exception-arguments
 join-timeout-exception-procedure
 join-timeout-exception?
@@ -368,6 +419,12 @@ keyword-expected-exception-procedure
 keyword-expected-exception?
 keyword-hash
 keyword?
+last
+last-pair
+length-mismatch-exception-arg-num
+length-mismatch-exception-arguments
+length-mismatch-exception-procedure
+length-mismatch-exception?
 link-flat
 link-incremental
 list->f32vector
@@ -381,15 +438,22 @@ list->u16vector
 list->u32vector
 list->u64vector
 list->u8vector
+list-copy
+list-set
+list-set!
+list-tabulate
 mailbox-receive-timeout-exception-arguments
 mailbox-receive-timeout-exception-procedure
 mailbox-receive-timeout-exception?
 main
+make-bytevector
 make-condition-variable
 make-f32vector
 make-f64vector
+make-list
 make-mutex
 make-parameter
+make-promise
 make-random-source
 make-root-thread
 make-s16vector
@@ -441,14 +505,18 @@ number-of-arguments-limit-exception?
 object->serial-number
 object->string
 object->u8vector
+open-binary-input-file
+open-binary-output-file
 open-directory
 open-dummy
 open-event-queue
 open-file
+open-input-bytevector
 open-input-process
 open-input-string
 open-input-u8vector
 open-input-vector
+open-output-bytevector
 open-output-process
 open-output-string
 open-output-u8vector
@@ -472,6 +540,7 @@ output-port-byte-position
 output-port-char-position
 output-port-column
 output-port-line
+output-port-open?
 output-port-readtable
 output-port-readtable-set!
 output-port-timeout-set!
@@ -485,8 +554,8 @@ path-strip-extension
 path-strip-trailing-directory-separator
 path-strip-volume
 path-volume
-port-settings-set!
 port-io-exception-handler-set!
+port-settings-set!
 port?
 pp
 pretty-print
@@ -498,6 +567,7 @@ process-status
 process-times
 processor-id
 processor?
+promise?
 protocol-info
 protocol-info-aliases
 protocol-info-name
@@ -522,7 +592,11 @@ range-exception-arguments
 range-exception-procedure
 range-exception?
 read-all
+read-bytevector
+read-bytevector!
+read-error?
 read-line
+read-string
 read-substring
 read-subu8vector
 read-u8
@@ -557,6 +631,7 @@ repl-output-port
 repl-result-history-max-length-set!
 repl-result-history-ref
 replace-bit-field
+reverse!
 rpc-remote-error-exception-arguments
 rpc-remote-error-exception-message
 rpc-remote-error-exception-procedure
@@ -565,9 +640,11 @@ s16vector
 s16vector->list
 s16vector-append
 s16vector-copy
+s16vector-copy!
 s16vector-fill!
 s16vector-length
 s16vector-ref
+s16vector-set
 s16vector-set!
 s16vector-shrink!
 s16vector?
@@ -575,9 +652,11 @@ s32vector
 s32vector->list
 s32vector-append
 s32vector-copy
+s32vector-copy!
 s32vector-fill!
 s32vector-length
 s32vector-ref
+s32vector-set
 s32vector-set!
 s32vector-shrink!
 s32vector?
@@ -585,9 +664,11 @@ s64vector
 s64vector->list
 s64vector-append
 s64vector-copy
+s64vector-copy!
 s64vector-fill!
 s64vector-length
 s64vector-ref
+s64vector-set
 s64vector-set!
 s64vector-shrink!
 s64vector?
@@ -595,9 +676,11 @@ s8vector
 s8vector->list
 s8vector-append
 s8vector-copy
+s8vector-copy!
 s8vector-fill!
 s8vector-length
 s8vector-ref
+s8vector-set
 s8vector-set!
 s8vector-shrink!
 s8vector?
@@ -708,7 +791,14 @@ step-level-set!
 string->keyword
 string->uninterned-keyword
 string->uninterned-symbol
+string->utf8
+string->vector
 string-ci=?-hash
+string-copy!
+string-foldcase
+string-for-each
+string-map
+string-set
 string-shrink!
 string=?-hash
 subf32vector
@@ -747,6 +837,7 @@ subvector
 subvector-fill!
 subvector-move!
 symbol-hash
+symbol=?
 system-stamp
 system-type
 system-type-string
@@ -762,6 +853,7 @@ table-ref
 table-search
 table-set!
 table?
+take
 tanh
 tcp-client-local-socket-info
 tcp-client-peer-socket-info
@@ -773,6 +865,7 @@ terminated-thread-exception-arguments
 terminated-thread-exception-procedure
 terminated-thread-exception?
 test-bit-field?
+textual-port?
 thread-base-priority
 thread-base-priority-set!
 thread-group->thread-group-list
@@ -781,9 +874,9 @@ thread-group->thread-list
 thread-group->thread-vector
 thread-group-name
 thread-group-parent
+thread-group-resume!
 thread-group-specific
 thread-group-specific-set!
-thread-group-resume!
 thread-group-suspend!
 thread-group-terminate!
 thread-group?
@@ -828,6 +921,9 @@ timeout->time
 top
 touch
 trace
+truncate-quotient
+truncate-remainder
+truncate/
 tty-history
 tty-history-max-length-set!
 tty-history-set!
@@ -845,9 +941,11 @@ u16vector
 u16vector->list
 u16vector-append
 u16vector-copy
+u16vector-copy!
 u16vector-fill!
 u16vector-length
 u16vector-ref
+u16vector-set
 u16vector-set!
 u16vector-shrink!
 u16vector?
@@ -855,9 +953,11 @@ u32vector
 u32vector->list
 u32vector-append
 u32vector-copy
+u32vector-copy!
 u32vector-fill!
 u32vector-length
 u32vector-ref
+u32vector-set
 u32vector-set!
 u32vector-shrink!
 u32vector?
@@ -865,20 +965,25 @@ u64vector
 u64vector->list
 u64vector-append
 u64vector-copy
+u64vector-copy!
 u64vector-fill!
 u64vector-length
 u64vector-ref
+u64vector-set
 u64vector-set!
 u64vector-shrink!
 u64vector?
+u8-ready?
 u8vector
 u8vector->list
 u8vector->object
 u8vector-append
 u8vector-copy
+u8vector-copy!
 u8vector-fill!
 u8vector-length
 u8vector-ref
+u8vector-set
 u8vector-set!
 u8vector-shrink!
 u8vector?
@@ -928,10 +1033,16 @@ user-info-shell
 user-info-uid
 user-info?
 user-name
+utf8->string
+vector->string
 vector-append
 vector-cas!
 vector-copy
+vector-copy!
+vector-for-each
 vector-inc!
+vector-map
+vector-set
 vector-shrink!
 void
 will-execute!
@@ -949,6 +1060,10 @@ with-output-to-process
 with-output-to-string
 with-output-to-u8vector
 with-output-to-vector
+write-bytevector
+write-shared
+write-simple
+write-string
 write-substring
 write-subu8vector
 write-u8
@@ -956,6 +1071,7 @@ wrong-number-of-arguments-exception-arguments
 wrong-number-of-arguments-exception-procedure
 wrong-number-of-arguments-exception?
 wrong-processor-c-return-exception?
+xcons
 
 ))
 

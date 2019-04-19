@@ -2,7 +2,7 @@
 
 ;;; File: "_t-univ-2.scm"
 
-;;; Copyright (c) 2011-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 2011-2019 by Marc Feeley, All Rights Reserved.
 ;;; Copyright (c) 2012 by Eric Thivierge, All Rights Reserved.
 
 (include "generic.scm")
@@ -1952,22 +1952,22 @@
              (lambda (ctx)
                (let ((obj (^local-var 'obj)))
                  (^ (^if (^bool? obj)
-                         (^return (^concat "c" (^if-expr obj "0" "1"))))
+                         (^return (^if-expr obj (^str "t") (^str "f"))))
 
                     (^if (^null? obj)
-                         (^return "c2"))
+                         (^return (^str "n")))
 
                     (^if (^void? obj)
-                         (^return "c3"))
+                         (^return (^str "v")))
 
                     (^if (^int? obj)
-                         (^return (^concat "i" (^tostr obj))))
+                         (^return (^concat (^str "i") (^tostr obj))))
 
                     (^if (^float? obj)
-                         (^return (^concat "f" (^tostr obj))))
+                         (^return (^concat (^str "f") (^tostr obj))))
 
                     (^if (^str? obj)
-                         (^return (^concat "s" obj)))
+                         (^return (^concat (^str "s") obj)))
 
                     (univ-throw ctx "\"const_to_string error (cannot convert object)\""))))))
            (univ-method 'string_to_const '(public) 'scmobj
@@ -1979,14 +1979,17 @@
                      (prefix (^local-var 'prefix)))
                  (^ (^var-declaration 'str prefix (^string-ref code 0))
 
-                    (^if (^= prefix "c")
-                         (^return (^if-expr (^eq? (^string-ref code 1) (^str "0"))
-                                            (^bool #t)
-                                            (^if-expr (^eq? (^string-ref code 1) (^str "1"))
-                                                      (^bool #f)
-                                                      (^if-expr (^eq? (^string-ref code 1) (^str "2"))
-                                                                (^null)
-                                                                (^void))))))
+                    (^if (^= prefix (^str "t"))
+                         (^return (^bool #t)))
+
+                    (^if (^= prefix (^str "f"))
+                         (^return (^bool #f)))
+
+                    (^if (^= prefix (^str "n"))
+                         (^return (^null)))
+
+                    (^if (^= prefix (^str "v"))
+                         (^return (^void)))
 
                     (^if (^= prefix (^str "i"))
                          (^return (^str-toint (^substring code 1 (^- (^str-length code) 1)))))
@@ -2921,8 +2924,7 @@ EOF
       '() ;; properties
       'scmobj ;; extends
       '() ;; class-fields
-      (list (univ-field 'thunk 'scmobj #f '(public)) ;; instance-fields
-            (univ-field 'result 'scmobj (^this) '(public)))))
+      (list (univ-field 'state 'scmobj #f '(public))))) ;; instance-fields
 
     ((will)
      (rts-class

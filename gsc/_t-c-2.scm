@@ -2,7 +2,7 @@
 
 ;;; File: "_t-c-2.scm"
 
-;;; Copyright (c) 1994-2017 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 (include "fixnum.scm")
 
@@ -102,10 +102,51 @@
       (cons (list->vect (cons i (car lst)))
             (number (+ i 1) (cdr lst)))))
 
-  (if targ-debug-info?
-    (vector (list->vect (number 0 (queue->list targ-first-class-label-queue)))
-            (list->vect (queue->list targ-var-descr-queue)))
-    #f))
+  (targ-compact-using-sharing
+   targ-sharing-table
+   (if targ-debug-info?
+       (vector (list->vect
+                (number 0 (queue->list targ-first-class-label-queue)))
+               (list->vect
+                (queue->list targ-var-descr-queue)))
+       #f)))
+
+(define (targ-compact-using-sharing shared obj)
+
+  (define (compact obj)
+    (if (or (string? obj)
+            (pair? obj)
+            (box-object? obj)
+            (vector-object? obj))
+        (let ((x (table-ref shared obj #f)))
+          (or x
+              (cond ((string? obj)
+                     (table-set! shared obj obj)
+                     obj)
+                    ((pair? obj)
+                     (let ((p (cons #f #f)))
+                       (table-set! shared obj p)
+                       (set-car! p (compact (car obj)))
+                       (set-cdr! p (compact (cdr obj)))
+                       p))
+                    ((box-object? obj)
+                     (let ((b (box-object #f)))
+                       (table-set! shared obj b)
+                       (set-box-object! b (compact (unbox-object obj)))
+                       b))
+                    (else
+                     (let* ((len (vector-length obj))
+                            (v (make-vector len)))
+                       (table-set! shared obj v)
+                       (let loop ((i (- len 1)))
+                         (if (< i 0)
+                             v
+                             (begin
+                               (vector-set! v i (compact (vector-ref obj i)))
+                               (loop (- i 1))))))))))
+        obj))
+
+  (compact obj))
 
 (define (targ-scan-scheme-procedure bbs)
 
@@ -2739,13 +2780,13 @@
     (lambda (opnds sn)
       (targ-apply-simp-gen opnds #f "MAKEWILL"))))
 
-(define (targ-apply-make-promise)
+(define (targ-apply-make-delay-promise)
   (targ-apply-alloc
-    (lambda (n) targ-promise-space)
+    (lambda (n) targ-delay-promise-space)
     #t
     #f
     #f
-    (targ-apply-simp-generator #f #f "MAKEPROMISE")))
+    (targ-apply-simp-generator #f #f "MAKEDELAYPROMISE")))
 
 (define (targ-apply-make-continuation)
   (targ-apply-alloc
@@ -3314,6 +3355,8 @@
 
 ;; Table of inlinable operations (for 'apply' and 'ifjump' GVM instructions)
 
+(define targ-use-c-rts-char-operations #f)
+
 (define (targ-setup-inlinable)
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3381,6 +3424,8 @@
 ;;(targ-op "##integer?"         (targ-ifjump-simp-s #f "INTEGERP"))
 ;;(targ-op "##exact?"           (targ-ifjump-simp-s #f "EXACTP"))
 ;;(targ-op "##inexact?"         (targ-ifjump-simp-s #f "INEXACTP"))
+
+(targ-op "##exact-integer?"     (targ-ifjump-simp-s #f "EXACTINTP"))
 
 ;; specific to C backend:
 
@@ -3517,6 +3562,7 @@
 (targ-op "##flasinh"     (targ-apply-simpflo-u #t "F64ASINH"))
 (targ-op "##flacosh"     (targ-apply-simpflo-u #t "F64ACOSH"))
 (targ-op "##flatanh"     (targ-apply-simpflo-u #t "F64ATANH"))
+(targ-op "##flhypot"     (targ-apply-simpflo-u #t "F64HYPOT"))
 (targ-op "##flexpt"      (targ-apply-simpflo-u #t "F64EXPT"))
 (targ-op "##flsqrt"      (targ-apply-simpflo-u #t "F64SQRT"))
 (targ-op "##flsquare"    (targ-apply-simpflo-u #t "F64SQUARE"))
@@ -3546,13 +3592,15 @@
 (targ-op "##char<=?"          (targ-ifjump-fold-u #f "CHARLEP"))
 (targ-op "##char>=?"          (targ-ifjump-fold-u #f "CHARGEP"))
 
-(targ-op "##char-alphabetic?" (targ-ifjump-simp-u #f "CHARALPHABETICP"))
-(targ-op "##char-numeric?"    (targ-ifjump-simp-u #f "CHARNUMERICP"))
-(targ-op "##char-whitespace?" (targ-ifjump-simp-u #f "CHARWHITESPACEP"))
-(targ-op "##char-upper-case?" (targ-ifjump-simp-u #f "CHARUPPERCASEP"))
-(targ-op "##char-lower-case?" (targ-ifjump-simp-u #f "CHARLOWERCASEP"))
-(targ-op "##char-upcase"      (targ-apply-simp-u #f #f #f "CHARUPCASE"))
-(targ-op "##char-downcase"    (targ-apply-simp-u #f #f #f "CHARDOWNCASE"))
+(if targ-use-c-rts-char-operations
+    (begin
+      (targ-op "##char-alphabetic?" (targ-ifjump-simp-u #f "CHARALPHABETICP"))
+      (targ-op "##char-numeric?"    (targ-ifjump-simp-u #f "CHARNUMERICP"))
+      (targ-op "##char-whitespace?" (targ-ifjump-simp-u #f "CHARWHITESPACEP"))
+      (targ-op "##char-upper-case?" (targ-ifjump-simp-u #f "CHARUPPERCASEP"))
+      (targ-op "##char-lower-case?" (targ-ifjump-simp-u #f "CHARLOWERCASEP"))
+      (targ-op "##char-upcase"      (targ-apply-simp-u #f #f #f "CHARUPCASE"))
+      (targ-op "##char-downcase"    (targ-apply-simp-u #f #f #f "CHARDOWNCASE"))))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3620,11 +3668,16 @@
 
 (targ-op "##gc-hash-table-ref"     (targ-apply-simp-u #f #f #f "GCHASHTABLEREF"))
 (targ-op "##gc-hash-table-set!"    (targ-apply-simp-u #f #f 0 "GCHASHTABLESET")) ;;TODO: what should be ssb-space?
+(targ-op "##gc-hash-table-union!"  (targ-apply-simp-u #f #f 0 "GCHASHTABLEUNION")) ;;TODO: what should be ssb-space?
+(targ-op "##gc-hash-table-find!"   (targ-apply-simp-u #f #f 0 "GCHASHTABLEFIND")) ;;TODO: what should be ssb-space?
 (targ-op "##gc-hash-table-rehash!" (targ-apply-simp-u #f #f 0 "GCHASHTABLEREHASH")) ;;TODO
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 (targ-op "##values"           (targ-apply-vector-s 'values))
+(targ-op "##values-length"    (targ-apply-simp-u #f #f #f "VALUESLENGTH"))
+(targ-op "##values-ref"       (targ-apply-simp-u #f #f #f "VALUESREF"))
+(targ-op "##values-set!"      (targ-apply-simp-u #f #t #f "VALUESSET"))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3765,6 +3818,8 @@
 (targ-op "##cpxnum-make"        (targ-apply-cpxnum-make))
 (targ-op "##cpxnum-real"        (targ-ifjump-apply-u "CPXNUMREAL"))
 (targ-op "##cpxnum-imag"        (targ-ifjump-apply-u "CPXNUMIMAG"))
+(targ-op "##real-part"          (targ-ifjump-apply-u "REALPART"))
+(targ-op "##imag-part"          (targ-ifjump-apply-u "IMAGPART"))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3827,14 +3882,13 @@
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-(targ-op "##make-promise"        (targ-apply-make-promise))
-(targ-op "##promise-thunk"       (targ-ifjump-apply-u "PROMISETHUNK"))
-(targ-op "##promise-thunk-set!"  (targ-apply-simp-u #f #t 1 "PROMISETHUNKSET"))
-(targ-op "##promise-result"      (targ-ifjump-apply-u "PROMISERESULT"))
-(targ-op "##promise-result-set!" (targ-apply-simp-u #f #t 1 "PROMISERESULTSET"))
+(targ-op "##make-delay-promise" (targ-apply-make-delay-promise))
+(targ-op "##promise-state"      (targ-ifjump-apply-u "PROMISESTATE"))
+(targ-op "##promise-state-set!" (targ-apply-simp-u #f #t 1 "PROMISESTATESET"))
 
 (targ-op "##force"            (targ-apply-force))
 (targ-op "##void"             (targ-apply-simp-s #f #f #f "VOID"))
+(targ-op "##eof-object"       (targ-apply-simp-s #f #f #f "EOF"))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

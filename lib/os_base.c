@@ -7,7 +7,7 @@
  */
 
 #define ___INCLUDED_FROM_OS_BASE
-#define ___VERSION 409000
+#define ___VERSION 409003
 #include "gambit.h"
 
 #include "os_base.h"
@@ -672,6 +672,7 @@ ___UCS_2STRING **argv_return;)
                     {
                       if ((nb_backslashes & 1) == 0)
                         in_double_quotes ^= 1;
+#define PROCESS_PROGRAM_LIKE_OTHER_ARGS
 #ifndef PROCESS_PROGRAM_LIKE_OTHER_ARGS
                       if (argc == 0)
                         nb_backslashes = (nb_backslashes<<1) + 1;

@@ -1,6 +1,6 @@
 /* File: "setup.c" */
 
-/* Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved. */
+/* Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved. */
 
 /*
  * This module contains the routines that setup the Scheme program for
@@ -8,7 +8,7 @@
  */
 
 #define ___INCLUDED_FROM_SETUP
-#define ___VERSION 409000
+#define ___VERSION 409003
 #include "gambit.h"
 
 #include "os_setup.h"
@@ -1501,6 +1501,7 @@ ___module_struct *module;)
         case ___sSTRUCTURE:
         case ___sRATNUM:
         case ___sCPXNUM:
+        case ___sBOXVALUES:
           p += ___SUBTYPED_BODY;
           for (i=0; i<words; i++)
             fixref (module, p+i);
@@ -1881,6 +1882,9 @@ ___SCMOBJ linkername;)
  */
 
 
+#ifdef ___USE_C_RTS_CHAR_OPERATIONS
+
+
 ___EXP_FUNC(___BOOL,___iswalpha)
    ___P((___UCS_4 x),
         (x)
@@ -2201,6 +2205,9 @@ ___SCMOBJ str2;)
 }
 
 
+#endif
+
+
 /*---------------------------------------------------------------------------*/
 
 /*
@@ -2438,8 +2445,25 @@ double x;)
 
 #else
 
-  /* TODO: replace with more accurate algorithm */
-  return log (x + 1.0);
+  /* Some code in _num.scm expects that log1p() is more accurate than
+     the naive algorithm.
+     This is somewhat  more accurate, see
+     https://stat.ethz.ch/pipermail/r-devel/2003-August/027396.html
+     https://books.google.com/books?id=OjUyDwAAQBAJ&pg=PA290&lpg=PA290&dq=beebe+log1p&source=bl&ots=VLxmiSk1fA&sig=ACfU3U0_8tqKemomSjKW73iJ0zUO1u3p3Q&hl=en&sa=X&ved=2ahUKEwjfxZbE8LvhAhVNm-AKHWScB7w4ChDoATAAegQICRAB#v=onepage&q=beebe%20log1p&f=false
+  */
+
+  double u;
+
+  u = 1.0 + x;
+  if (u == 1.0)
+    /* x near 0. */
+    return x;
+  if (u == x)
+    /* large arguments and infinities */
+    return log (u);
+  else
+    /* NaNs and other arguments */
+    return log (u) * (x / (u - 1.0));
 
 #endif
 
@@ -2670,9 +2694,72 @@ double x;)
     }
   else if (___isfinite (x) || ___isfinite (y))
     return atan2 (y, x);
+  else if (x > 0.)  /* +inf.0 */
+    /* return pi/4 with appropriate sign */
+    return ___copysign (.7853981633974483, y);
   else
-    return ___copysign (x/y, x*y); /* returns NAN with appropriate sign */
+    /* return 3pi/4 with appropriate sign */
+    return ___copysign (2.356194490192345, y);
 
+#endif
+}
+
+#endif
+
+
+#ifdef ___DEFINE_HYPOT
+
+___EXP_FUNC(double,___hypot)
+   ___P((double x,
+         double y),
+        (x,
+         y)
+double x;
+double y;)
+{
+#ifdef ___HAVE_GOOD_HYPOT
+
+  return hypot (x, y);
+
+#else
+
+  /* From:
+     Branch Cuts for Complex Elementary Functions
+     or
+     Much Ado About Nothing's Sign Bit
+     by
+     W. KAHAN
+  */
+  double
+    r2   = 1.4142135623730951,
+    r2p1 = 2.414213562373095,
+    t2p1 = 1.2537167179050217e-16;
+  double t, s;
+    
+  x = fabs (x);
+  y = fabs (y);
+    
+  if (x < y) {
+    t = x; x = y; y = t;
+  }
+  if (isinf (y))
+    x = y;
+  t = x - y;
+  if (!(x == INFINITY) && !(t == x)) {
+    if (t > y) {
+      s = x / y;
+      s += sqrt(1.0 + s*s);
+      return x + y/s;
+    } else {
+      s = t/y;
+      t = s * (2.0 + s);
+      s = r2p1 + (s + (t2p1 + t/(r2 + sqrt(2.0 + t))));
+      return x + y/s;
+    }
+  }
+  else
+    return x;
+ 
 #endif
 }
 
@@ -2696,6 +2783,8 @@ double y;)
 #else
 
   if (y == 0.0)
+    return 1.0;
+  else if (x == 1.0)
     return 1.0;
   else if (___isnan (x))
     return x;
@@ -2939,7 +3028,6 @@ ___SCMOBJ stack_marker;)
   ___SCMOBJ ___err;
 
   ___D_FP
-  ___SET_FP(___PSFP)
 
   /*
    * The C function which has called ___call() has put the arguments
@@ -2981,6 +3069,8 @@ ___SCMOBJ stack_marker;)
    */
 
   ___LD_ARG_REGS /* declare and load GVM argument registers from ___ps */
+
+  ___SET_FP(___PSFP)
 
   ___fp[-1] = ___PSR0;      /* create a frame with the same format as the */
   ___fp[-2] = stack_marker; /* one created for the return to C handler    */
@@ -3918,8 +4008,11 @@ ___virtual_machine_state ___vms;)
    * Setup registers.
    */
 
-  for (i=0; i<___NB_GVM_REGS; i++)
+  for (i=0; i<sizeof(___ps->r)/sizeof(*___ps->r); i++)
     ___ps->r[i] = ___VOID;
+
+  for (i=0; i<sizeof(___ps->saved)/sizeof(*___ps->saved); i++)
+    ___ps->saved[i] = ___VOID;
 
   /*
    * Copy handlers from global state to processor state.
@@ -4369,6 +4462,8 @@ ___HIDDEN void setup_dynamic_linking ___PVOID
 
 #ifndef ___CAN_IMPORT_DYNAMICALLY
 
+#ifdef ___USE_C_RTS_CHAR_OPERATIONS
+
   ___GSTATE->___iswalpha
     = ___iswalpha;
 
@@ -4395,6 +4490,8 @@ ___HIDDEN void setup_dynamic_linking ___PVOID
 
   ___GSTATE->___string_collate_ci
     = ___string_collate_ci;
+
+#endif
 
   ___GSTATE->___copysign
     = ___copysign;
@@ -4974,6 +5071,9 @@ ___HIDDEN void setup_dynamic_linking ___PVOID
 
   ___GSTATE->___gc_hash_table_set
     = ___gc_hash_table_set;
+
+  ___GSTATE->___gc_hash_table_union_find
+    = ___gc_hash_table_union_find;
 
   ___GSTATE->___gc_hash_table_rehash
     = ___gc_hash_table_rehash;

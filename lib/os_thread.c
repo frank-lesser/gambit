@@ -6,7 +6,9 @@
  * This module implements thread-related services.
  */
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
 
 #ifdef HAVE_PTHREAD_SETAFFINITY_NP
 /* Needed to get pthread.h to define CPU_ZERO and CPU_SET */
@@ -14,7 +16,7 @@
 #endif
 
 #define ___INCLUDED_FROM_OS_THREAD
-#define ___VERSION 409000
+#define ___VERSION 409003
 #include "gambit.h"
 
 #include "os_base.h"

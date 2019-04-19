@@ -8,11 +8,11 @@
 #define ___GAMBIT_H
 
 #ifndef ___VERSION
-#define ___VERSION 409000
+#define ___VERSION 409003
 #endif
 
-#if ___VERSION != 409000
-#include "gambit-not409000.h"
+#if ___VERSION != 409003
+#include "gambit-not409003.h"
 #else
 
 #ifdef HAVE_CONFIG_H
@@ -1218,8 +1218,13 @@
  *                  1 <= ___NB_ARG_REGS <= min( 12, ___NB_GVM_REGS-2 )
  */
 
+#ifndef ___NB_GVM_REGS
 #define ___NB_GVM_REGS 5
+#endif
+
+#ifndef ___NB_ARG_REGS
 #define ___NB_ARG_REGS 3
+#endif
 
 /*
  * Determine if label values (a gcc extension to C) should be supported.
@@ -1470,13 +1475,6 @@
 #include <math.h>
 #endif
 
-/*
- * We assume that no C compiler has good implementations of atan2 and
- * pow.  So we need to define them in the Gambit runtime system.
- */
-
-#define ___DEFINE_ATAN2
-#define ___DEFINE_POW
 
 #ifdef ___OS_WIN32
 
@@ -1498,6 +1496,9 @@
 #define ___DEFINE_ASINH
 #define ___DEFINE_ACOSH
 #define ___DEFINE_ATANH
+#define ___DEFINE_ATAN2
+#define ___DEFINE_POW
+#define ___DEFINE_HYPOT
 
 #endif
 
@@ -1517,6 +1518,7 @@
 #define ___HAVE_GOOD_ASINH
 #define ___HAVE_GOOD_ACOSH
 #define ___HAVE_GOOD_ATANH
+#define ___HAVE_GOOD_HYPOT
 
 #endif
 
@@ -1545,6 +1547,9 @@
 #define ___HAVE_GOOD_SINH
 #define ___HAVE_GOOD_COSH
 #define ___HAVE_GOOD_TANH
+#define ___HAVE_GOOD_POW
+#define ___HAVE_GOOD_ATAN2
+#define ___HAVE_GOOD_HYPOT
 
 #endif
 
@@ -1555,7 +1560,11 @@
 
 #ifndef ___DONT_HAVE_SIGNAL_H
 
+#ifndef ___USE_SIGSET_T
+#ifndef ___USE_NO_SIGSET_T
 #define @CONF_USE_SIGSET_T@
+#endif
+#endif
 
 #ifdef ___USE_SIGSET_T
 #include <signal.h>
@@ -1919,6 +1928,9 @@ ___CAST_U64((val)<<(((i)&7)<<3))
 #define ___WORD ___S32
 #define ___UWORD ___U32
 #define ___WORD_WIDTH 32
+#define ___PRIdWORD "d"
+#define ___PRIuWORD "u"
+#define ___PRIxWORD "08x"
 #define ___LOG_WORD_WIDTH 5
 #define ___WS 4
 #define ___LWS 2
@@ -1930,6 +1942,9 @@ ___CAST_U64((val)<<(((i)&7)<<3))
 #define ___WORD ___S64
 #define ___UWORD ___U64
 #define ___WORD_WIDTH 64
+#define ___PRIdWORD "ld"
+#define ___PRIuWORD "lu"
+#define ___PRIxWORD "016lx"
 #define ___LOG_WORD_WIDTH 6
 #define ___WS 8
 #define ___LWS 3
@@ -2932,6 +2947,7 @@ ___FIX((((___BIGMDOUBLEDIGIT)___BIGMFETCH(___BODY_AS(u,___tSUBTYPED),___INT(___B
 #define ___VECTORP(x)___TESTSUBTYPE(x,___sVECTOR)
 #define ___RATNUMP(x)___TESTSUBTYPE(x,___sRATNUM)
 #define ___CPXNUMP(x)___TESTSUBTYPE(x,___sCPXNUM)
+#define ___EXACTINTP(x)(___FIXNUMP(x)||___BIGNUMP(x))
 #define ___STRUCTUREP(x)___TESTSUBTYPE(x,___sSTRUCTURE)
 #define ___BOXP(x)(___TYP((___temp=x))==___tSUBTYPED&&(___SUBTYPED_HEADER(___temp)&___LSMASK)==___MAKE_HD((___BOX_SIZE<<___LWS),___sBOXVALUES,0))
 #define ___VALUESP(x)(___TYP((___temp=x))==___tSUBTYPED&&___TESTSUBTYPETAG(___temp,___sBOXVALUES)&&(___SUBTYPED_HEADER(___temp)&___LSMASK)!=___MAKE_HD((___BOX_SIZE<<___LWS),___sBOXVALUES,0))
@@ -3379,6 +3395,11 @@ else \
 #else
 #define ___F64EXPT(x,y)___EXT(___pow)(x,y)
 #endif
+#ifdef ___HAVE_GOOD_HYPOT
+#define ___F64HYPOT(x,y)___CLIBEXT(hypot)(x,y)
+#else
+#define ___F64HYPOT(x,y)___EXT(___hypot)(x,y)
+#endif
 #define ___F64SQRT(x)___CLIBEXT(sqrt)(x)
 #define ___F64COPYSIGN(x,y)___EXT(___copysign)(x,y)
 
@@ -3427,6 +3448,7 @@ else \
 #define ___CHARLEP(x,y)((x)<=(y))
 #define ___CHARGEP(x,y)((x)>=(y))
 
+#ifdef ___USE_C_RTS_CHAR_OPERATIONS
 #define ___CHARALPHABETICP(x)___EXT(___iswalpha)(___INT(x))
 #define ___CHARNUMERICP(x)___EXT(___iswdigit)(___INT(x))
 #define ___CHARWHITESPACEP(x)___EXT(___iswspace)(___INT(x))
@@ -3434,6 +3456,7 @@ else \
 #define ___CHARLOWERCASEP(x)___EXT(___iswlower)(___INT(x))
 #define ___CHARUPCASE(x)___CHR(___EXT(___towupper)(___INT(x)))
 #define ___CHARDOWNCASE(x)___CHR(___EXT(___towlower)(___INT(x)))
+#endif
 
 /* APPLY-able operations */
 
@@ -3497,6 +3520,10 @@ ___END_ALLOC_SUBTYPED(___BOX_SIZE), \
 ___GET_SUBTYPED(___BOX_SIZE))
 #define ___UNBOX(x)___BODY_AS(x,___tSUBTYPED)[0]
 #define ___SETBOX(x,y)___BODY_AS(x,___tSUBTYPED)[0]=y;
+
+#define ___VALUESLENGTH(v)___FIX(___HD_FIELDS(___SUBTYPED_HEADER(v)))
+#define ___VALUESREF(v,i)*(___WORD*)(((___WORD)___BODY_AS(v,___tSUBTYPED))+((i)<<(___LWS-___TB)))
+#define ___VALUESSET(v,i,val)*(___WORD*)(((___WORD)___BODY_AS(v,___tSUBTYPED))+((i)<<(___LWS-___TB)))=val;
 
 #define ___VECTORLENGTH(v)___FIX(___HD_FIELDS(___SUBTYPED_HEADER(v)))
 #define ___VECTORREF(v,i)*(___WORD*)(((___WORD)___BODY_AS(v,___tSUBTYPED))+((i)<<(___LWS-___TB)))
@@ -3626,16 +3653,21 @@ ___GET_SUBTYPED(___CPXNUM_SIZE))
 #define ___CPXNUMREAL(obj)___FIELD(obj,0)
 #define ___CPXNUMIMAG(obj)___FIELD(obj,1)
 
-#define ___MAKEPROMISE(x) \
-(___BEGIN_ALLOC_SUBTYPED(___MAKE_HD_WORDS(___PROMISE_SIZE,___sPROMISE)), \
-___ADD_SUBTYPED_ELEM(0,x), \
-___END_ALLOC_SUBTYPED(___PROMISE_SIZE), \
-___hp[-1]=___GET_SUBTYPED(___CPXNUM_SIZE))
+#define ___REALPART(obj)(___CPXNUMP(obj)?___CPXNUMREAL(obj):obj)
+#define ___IMAGPART(obj)(___CPXNUMP(obj)?___CPXNUMIMAG(obj):___FIX(0L))
 
-#define ___PROMISETHUNK(obj)___FIELD(obj,___PROMISE_THUNK)
-#define ___PROMISETHUNKSET(obj,val)___FIELD(obj,___PROMISE_THUNK) = val;
-#define ___PROMISERESULT(obj)___FIELD(obj,___PROMISE_RESULT)
-#define ___PROMISERESULTSET(obj,val)___FIELD(obj,___PROMISE_RESULT) = val;
+#define ___MAKEDELAYPROMISE(x) \
+(___BEGIN_ALLOC_SUBTYPED(___MAKE_HD_WORDS(___PROMISE_STATE_SIZE,___sVECTOR)), \
+___ADD_SUBTYPED_ELEM(0,___SUBTYPED_FROM_START(___hp)), \
+___ADD_SUBTYPED_ELEM(1,x), \
+___END_ALLOC_SUBTYPED(___PROMISE_STATE_SIZE), \
+___BEGIN_ALLOC_SUBTYPED(___MAKE_HD_WORDS(___PROMISE_SIZE,___sPROMISE)), \
+___ADD_SUBTYPED_ELEM(0,___GET_SUBTYPED(___PROMISE_STATE_SIZE)), \
+___END_ALLOC_SUBTYPED(___PROMISE_SIZE), \
+___GET_SUBTYPED(___PROMISE_SIZE))
+
+#define ___PROMISESTATE(obj)___FIELD(obj,___PROMISE_STATE)
+#define ___PROMISESTATESET(obj,val)___FIELD(obj,___PROMISE_STATE) = val;
 
 #define ___MAKECONTINUATION(frame,denv) \
 (___BEGIN_ALLOC_SUBTYPED(___MAKE_HD_WORDS(___CONTINUATION_SIZE,___sCONTINUATION)), \
@@ -3701,10 +3733,46 @@ ___GET_SUBTYPED(___WILL_SIZE))
 
 #define ___GCHASHTABLEREF(x,y)___EXT(___gc_hash_table_ref)(x,y)
 #define ___GCHASHTABLESET(x,y,z)___EXT(___gc_hash_table_set)(x,y,z)
+#define ___GCHASHTABLEUNION(x,y,z)___EXT(___gc_hash_table_union_find)(x,y,z,0)
+#define ___GCHASHTABLEFIND(x,y,z)___EXT(___gc_hash_table_union_find)(x,y,z,1)
 #define ___GCHASHTABLEREHASH(x,y)___EXT(___gc_hash_table_rehash)(x,y)
 
-#define ___GCHASHTABLE_HASH1(obj,mod) ((((obj)>>___TB)&___MAX_FIX)%(mod))
-#define ___GCHASHTABLE_HASH2(obj,mod) (((((obj)>>___TB)&___MAX_FIX)%((mod)-1))+1)
+#define ___ROTL32(n,shift) (((n)<<(shift)) | ((n)>>((-(shift))&31)))
+#define ___ROTR32(n,shift) (((n)>>(shift)) | ((n)<<((-(shift))&31)))
+#define ___ROTL64(n,shift) (((n)<<(shift)) | ((n)>>((-(shift))&63)))
+#define ___ROTR64(n,shift) (((n)>>(shift)) | ((n)<<((-(shift))&63)))
+
+#if ___WS == 4
+
+#define ___GCHASHTABLE_HASH_STEP_MULT(hash,step,obj,size) \
+do { \
+  ___U32 x = ___ROTR32(obj,___TB); \
+  x ^= ((4096+256+1)*___ROTL32(x,16)); \
+  hash = (___CAST(___U64,x) * ___CAST(___U32,size)) >> 32; \
+  step = 1; \
+} while (0)
+
+#else
+
+#define ___GCHASHTABLE_HASH_STEP_MULT(hash,step,obj,size) \
+do { \
+  ___U64 o = ___ROTR64(obj,___TB); \
+  ___U32 x = o ^ (o >> 32); \
+  x ^= ((4096+256+1)*___ROTL32(x,16)); \
+  hash = (___CAST(___U64,x) * ___CAST(___U32,size)) >> 32; \
+  step = 1; \
+} while (0)
+
+#endif
+
+#define ___GCHASHTABLE_HASH_STEP_MOD(hash,step,obj,size) \
+do { \
+  hash = (___CAST(___UWORD,obj)>>___TB) % (size); \
+  step = 1; \
+} while (0)
+
+#define ___GCHASHTABLE_HASH_STEP(hash,step,obj,size) \
+___GCHASHTABLE_HASH_STEP_MULT(hash,step,obj,size)
 
 #define ___GCHASHTABLE_FLAG_WEAK_KEYS      1
 #define ___GCHASHTABLE_FLAG_WEAK_VALS      2
@@ -3712,6 +3780,7 @@ ___GET_SUBTYPED(___WILL_SIZE))
 #define ___GCHASHTABLE_FLAG_ENTRY_DELETED  8
 #define ___GCHASHTABLE_FLAG_MEM_ALLOC_KEYS 16
 #define ___GCHASHTABLE_FLAG_NEED_REHASH    32
+#define ___GCHASHTABLE_FLAG_UNION_FIND     64
 
 #define ___GCHASHTABLE_NEXT      0
 #define ___GCHASHTABLE_FLAGS     1
@@ -3739,6 +3808,8 @@ ___SUBTYPED_FROM_START(___ALIGNUP((vms)->vm_scmobj,___WS))
 #define ___TICKETLOCK ___ticketlock_struct
 
 #define ___TICKETLOCK_DECL(id) ___TICKETLOCK id;
+
+#define ___TICKETLOCK_INIT_STATIC { ___FIX(0), ___FIX(0) }
 
 #define ___TICKETLOCK_INIT(lock) \
 (lock).next_ticket = (lock).current_ticket = ___FIX(0)
@@ -3867,6 +3938,7 @@ ___TICKETLOCK_UNLOCK2(___FIELD(obj,___INT(next)),___FIELD(obj,___INT(current)));
 
 #define ___SPINLOCK ___MUTEX
 #define ___SPINLOCK_DECL(id) ___MUTEX_DECL(id)
+#define ___SPINLOCK_INIT_STATIC ___MUTEX_INIT_STATIC
 #define ___SPINLOCK_INIT(lock) ___MUTEX_INIT(lock)
 #define ___SPINLOCK_DESTROY(lock) ___MUTEX_DESTROY(lock)
 #define ___SPINLOCK_LOCK(lock) ___MUTEX_LOCK(lock)
@@ -3876,6 +3948,7 @@ ___TICKETLOCK_UNLOCK2(___FIELD(obj,___INT(next)),___FIELD(obj,___INT(current)));
 
 #define ___SPINLOCK ___TICKETLOCK
 #define ___SPINLOCK_DECL(id) ___TICKETLOCK_DECL(id)
+#define ___SPINLOCK_INIT_STATIC ___TICKETLOCK_INIT_STATIC
 #define ___SPINLOCK_INIT(lock) ___TICKETLOCK_INIT(lock)
 #define ___SPINLOCK_DESTROY(lock) ___TICKETLOCK_DESTROY(lock)
 #define ___SPINLOCK_LOCK(lock) ___TICKETLOCK_LOCK(lock)
@@ -4012,9 +4085,9 @@ ___FIELD(___FIELD(thread,___THREAD_CONT),___CONTINUATION_FRAME) = frame;
 #define ___SYMKEY_NEXT   2
 #define ___SYMBOL_GLOBAL 3
 
-#define ___PROMISE_SIZE   2
-#define ___PROMISE_THUNK  0
-#define ___PROMISE_RESULT 1
+#define ___PROMISE_SIZE  1
+#define ___PROMISE_STATE 0
+#define ___PROMISE_STATE_SIZE 2
 
 #define ___CONTINUATION_SIZE  2
 #define ___CONTINUATION_FRAME 0
@@ -5895,8 +5968,8 @@ ___JUMPEXTPRM(___NOTHING,___ps->handler_heap_limit) \
 #endif
 
 #define ___FORCE1(n,src) \
-if (___TYP((___temp=(src)))==___tSUBTYPED&&___SUBTYPE(___temp)==___FIX(___sPROMISE)){___ps->temp1=___LBL(n);___ps->temp2=___temp;___JUMPEXTPRM(___NOTHING,___ps->handler_force);
-#define ___FORCE2 ___temp=___ps->temp2;}
+if (___TYP((___temp=(src)))==___tSUBTYPED&&___SUBTYPE(___temp)==___FIX(___sPROMISE)){___ps->temp2=___temp;___pc=___FIELD(___temp,0);___temp=___FIELD(___pc,0); if (___temp==___pc){___ps->temp1=___LBL(n);___JUMPEXTPRM(___NOTHING,___ps->handler_force);
+#define ___FORCE2 ___temp=___ps->temp2;}}
 #define ___FORCE3 ___temp
 
 #define ___MODULE_KIND 0
@@ -8146,6 +8219,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___MUTEX pthread_mutex_t
 #define ___MUTEX_DECL(id) ___MUTEX id;
+#define ___MUTEX_INIT_STATIC PTHREAD_MUTEX_INITIALIZER
 #define ___MUTEX_INIT(mut) (pthread_mutex_init (&mut, NULL) == 0)
 #define ___MUTEX_DESTROY(mut) (pthread_mutex_destroy (&mut) == 0)
 #define ___MUTEX_LOCK(mut) (pthread_mutex_lock (&mut) == 0)
@@ -8153,6 +8227,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___CONDVAR pthread_cond_t
 #define ___CONDVAR_DECL(id) ___CONDVAR id;
+#define ___CONDVAR_INIT_STATIC PTHREAD_COND_INITIALIZER
 #define ___CONDVAR_INIT(cv) (pthread_cond_init (&cv, NULL) == 0)
 #define ___CONDVAR_DESTROY(cv) (pthread_cond_destroy (&cv) == 0)
 #define ___CONDVAR_WAIT(cv,mut) (pthread_cond_wait (&cv, &mut) == 0)
@@ -8167,6 +8242,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___MUTEX CRITICAL_SECTION
 #define ___MUTEX_DECL(id) ___MUTEX id;
+#define ___MUTEX_INIT_STATIC NULL
 #define ___MUTEX_INIT(mut) InitializeCriticalSection (&mut)
 #define ___MUTEX_DESTROY(mut) DeleteCriticalSection (&mut)
 #define ___MUTEX_LOCK(mut) EnterCriticalSection (&mut)
@@ -8176,6 +8252,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___CONDVAR CONDITION_VARIABLE
 #define ___CONDVAR_DECL(id) ___CONDVAR id;
+#define ___CONDVAR_INIT_STATIC CONDITION_VARIABLE_INIT
 #define ___CONDVAR_INIT(cv) InitializeConditionVariable (&cv)
 #define ___CONDVAR_DESTROY(cv)
 #define ___CONDVAR_WAIT(cv,mut) SleepConditionVariableCS (&cv, &mut, INFINITE)
@@ -8190,6 +8267,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___CONDVAR int
 #define ___CONDVAR_DECL(id) ___CONDVAR id;
+#define ___CONDVAR_INIT_STATIC 0
 #define ___CONDVAR_INIT(cv) cv = 0
 #define ___CONDVAR_DESTROY(cv)
 #define ___CONDVAR_WAIT(cv,mut) do { ___MUTEX_UNLOCK(mut); ___MUTEX_LOCK(mut); } while (0)
@@ -8208,6 +8286,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___MUTEX int
 #define ___MUTEX_DECL(id)
+#define ___MUTEX_INIT_STATIC 0
 #define ___MUTEX_INIT(mut)
 #define ___MUTEX_DESTROY(mut)
 #define ___MUTEX_LOCK(mut)
@@ -8215,6 +8294,7 @@ typedef struct ___full_duplex_pipe
 
 #define ___CONDVAR int
 #define ___CONDVAR_DECL(id)
+#define ___CONDVAR_INIT_STATIC 0
 #define ___CONDVAR_INIT(cv)
 #define ___CONDVAR_DESTROY(cv)
 #define ___CONDVAR_WAIT(cv,mut)
@@ -8828,10 +8908,12 @@ typedef struct ___processor_state_struct
     ___WORD *heap_limit;
     ___WORD *hp;
 
-    ___WORD r[___NB_GVM_REGS];
+    ___WORD r[___NB_GVM_REGS]; /* GVM registers */
 
     ___WORD pc;
     ___WORD na;
+
+    ___WORD saved[3]; /* Scheme objects protected from GC */
 
     /* these handlers are duplicated from the global state for quick access */
 
@@ -9386,6 +9468,7 @@ typedef struct ___global_state_struct
 #endif
 
 #ifndef ___CAN_IMPORT_DYNAMICALLY
+#ifdef ___USE_C_RTS_CHAR_OPERATIONS
     ___BOOL (*___iswalpha)
        ___P((___UCS_4 x),
             ());
@@ -9415,6 +9498,7 @@ typedef struct ___global_state_struct
        ___P((___SCMOBJ s1,
              ___SCMOBJ s2),
             ());
+#endif
     double (*___copysign)
        ___P((double x,
              double y),
@@ -9490,6 +9574,12 @@ typedef struct ___global_state_struct
 #endif
 #ifdef ___DEFINE_POW
     double (*___pow)
+       ___P((double x,
+             double y),
+            ());
+#endif
+#ifdef ___DEFINE_HYPOT
+    double (*___hypot)
        ___P((double x,
              double y),
             ());
@@ -10424,6 +10514,12 @@ typedef struct ___global_state_struct
        ___P((___SCMOBJ ht,
              ___SCMOBJ key,
              ___SCMOBJ val),
+            ());
+    ___SCMOBJ (*___gc_hash_table_union_find)
+       ___P((___SCMOBJ ht,
+             ___SCMOBJ key1,
+             ___SCMOBJ key2,
+             ___BOOL find),
             ());
     ___SCMOBJ (*___gc_hash_table_rehash)
        ___P((___SCMOBJ ht_src,
@@ -11700,6 +11796,12 @@ ___IMP_FUNC(___SCMOBJ,___gc_hash_table_set)
          ___SCMOBJ key,
          ___SCMOBJ val),
         ());
+___IMP_FUNC(___SCMOBJ,___gc_hash_table_union_find)
+   ___P((___SCMOBJ ht,
+         ___SCMOBJ key1,
+         ___SCMOBJ key2,
+         ___BOOL find),
+        ());
 ___IMP_FUNC(___SCMOBJ,___gc_hash_table_rehash)
    ___P((___SCMOBJ ht_src,
          ___SCMOBJ ht_dst),
@@ -11708,6 +11810,7 @@ ___IMP_FUNC(___SCMOBJ,___gc_hash_table_rehash)
 
 #ifndef ___INCLUDED_FROM_SETUP
 ___GSTATEDECL
+#ifdef ___USE_C_RTS_CHAR_OPERATIONS
 ___IMP_FUNC(___BOOL,___iswalpha)
    ___P((___UCS_4 x),
         ());
@@ -11737,6 +11840,7 @@ ___IMP_FUNC(___SCMOBJ,___string_collate_ci)
    ___P((___SCMOBJ s1,
          ___SCMOBJ s2),
         ());
+#endif
 ___IMP_FUNC(double,___copysign)
    ___P((double x,
          double y),
@@ -11812,6 +11916,12 @@ ___IMP_FUNC(double,___atan2)
 #endif
 #ifdef ___DEFINE_POW
 ___IMP_FUNC(double,___pow)
+   ___P((double x,
+         double y),
+        ());
+#endif
+#ifdef ___DEFINE_HYPOT
+___IMP_FUNC(double,___hypot)
    ___P((double x,
          double y),
         ());

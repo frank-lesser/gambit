@@ -2,7 +2,7 @@
 
 ;;; File: "_num#.scm"
 
-;;; Copyright (c) 1994-2017 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -13,9 +13,9 @@
   constructor: #f
   opaque:
 
-  (procedure unprintable: read-only:)
-  (arguments unprintable: read-only:)
-  (arg-num   unprintable: read-only:)
+  (procedure unprintable: read-only: no-functional-setter:)
+  (arguments unprintable: read-only: no-functional-setter:)
+  (arg-num   unprintable: read-only: no-functional-setter:)
 )
 
 (define-library-type-of-exception divide-by-zero-exception
@@ -23,8 +23,8 @@
   constructor: #f
   opaque:
 
-  (procedure unprintable: read-only:)
-  (arguments unprintable: read-only:)
+  (procedure unprintable: read-only: no-functional-setter:)
+  (arguments unprintable: read-only: no-functional-setter:)
 )
 
 (define-library-type-of-exception fixnum-overflow-exception
@@ -32,8 +32,8 @@
   constructor: #f
   opaque:
 
-  (procedure unprintable: read-only:)
-  (arguments unprintable: read-only:)
+  (procedure unprintable: read-only: no-functional-setter:)
+  (arguments unprintable: read-only: no-functional-setter:)
 )
 
 ;;;----------------------------------------------------------------------------
@@ -445,7 +445,7 @@
 (##define-macro (macro-inexact-+3pi/4) 2.356194490192345)
 (##define-macro (macro-inexact-+inf)  (/ +1. 0.))
 (##define-macro (macro-inexact--inf)  (/ -1. 0.))
-(##define-macro (macro-inexact-+nan)  (/ 0. 0.))
+(##define-macro (macro-inexact-+nan)  (##flcopysign (/ 0. 0.) +1.))
 (##define-macro (macro-cpxnum-+2i)    +2i)
 (##define-macro (macro-cpxnum--i)     -i)
 (##define-macro (macro-cpxnum-+i)     +i)
@@ -574,25 +574,9 @@
 ;; slot 0 = numerator
 ;; slot 1 = denominator
 
-;;TODO: replace with ##ratnum-make
-
-(macro-case-target
-
- ((C)
-
-  (##define-macro (macro-ratnum-make num den)
-    `(##subtype-set!
-      (##vector ,num ,den)
-      (macro-subtype-ratnum)))
-
-  (##define-macro (macro-ratnum-numerator r)   `(macro-slot 0 ,r))
-  (##define-macro (macro-ratnum-denominator r) `(macro-slot 1 ,r)))
-
- (else
-
-  (##define-macro (macro-ratnum-make num den) `(##ratnum-make ,num ,den))
-  (##define-macro (macro-ratnum-numerator r) `(##ratnum-numerator ,r))
-  (##define-macro (macro-ratnum-denominator r) `(##ratnum-denominator ,r))))
+(##define-macro (macro-ratnum-make num den) `(##ratnum-make ,num ,den))
+(##define-macro (macro-ratnum-numerator r) `(##ratnum-numerator ,r))
+(##define-macro (macro-ratnum-denominator r) `(##ratnum-denominator ,r))
 
 (define-macro (macro-exact-int->ratnum x)
   `(macro-ratnum-make ,x 1))
@@ -605,25 +589,9 @@
 ;; slot 0 = real
 ;; slot 1 = imag
 
-;;TODO: replace with ##cpxnum-make
-
-(macro-case-target
-
- ((C)
-
-  (##define-macro (macro-cpxnum-make r i)
-    `(##subtype-set!
-      (##vector ,r ,i)
-      (macro-subtype-cpxnum)))
-
-  (##define-macro (macro-cpxnum-real c) `(macro-slot 0 ,c))
-  (##define-macro (macro-cpxnum-imag c) `(macro-slot 1 ,c)))
-
- (else
-
-  (##define-macro (macro-cpxnum-make r i) `(##cpxnum-make ,r ,i))
-  (##define-macro (macro-cpxnum-real c) `(##cpxnum-real ,c))
-  (##define-macro (macro-cpxnum-imag c) `(##cpxnum-imag ,c))))
+(##define-macro (macro-cpxnum-make r i) `(##cpxnum-make ,r ,i))
+(##define-macro (macro-cpxnum-real c) `(##cpxnum-real ,c))
+(##define-macro (macro-cpxnum-imag c) `(##cpxnum-imag ,c))
 
 (define-macro (macro-noncpxnum->cpxnum x)
   `(macro-cpxnum-make ,x 0))

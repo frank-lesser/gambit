@@ -1,10 +1,10 @@
 # Configure template for Gambit system.
 
-# Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+# Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT(Gambit,v4.9.0,gambit@iro.umontreal.ca,gambit-v4_9_0)
+AC_INIT(Gambit,v4.9.3,gambit@iro.umontreal.ca,gambit-v4_9_3)
 
 AC_CONFIG_HEADERS(include/config.h)
 
@@ -60,7 +60,9 @@ DEFS_EXE=""
 
 DEFS_OBJ_DYN_LIB_EXE=""
 
-COMPILATION_OPTIONS=""
+if test "${COMPILATION_OPTIONS+set}" != set; then
+  COMPILATION_OPTIONS=""
+fi
 
 RTLIB_COND_EXPAND_FEATURES=""
 
@@ -1168,6 +1170,11 @@ AC_DEFUN([AC_CHECK__NSGETENVIRON],
   fi
 ])
 
+AC_DEFUN([AC_CHECK__NSGETEXECUTABLEPATH],
+[AC_CHECK_HEADERS(mach-o/dyld.h)
+ AC_CHECK_FUNCS(_NSGetExecutablePath)
+])
+
 AC_DEFUN([AC_CHECK_REMOVE],
 [
   AC_CHECK_FUNCS(remove)
@@ -1181,6 +1188,8 @@ AC_DEFUN([AC_CHECK_RENAME],
 AC_DEFUN([AC_CHECK_MKDIR],
 [
   AC_CHECK_HEADERS(sys/stat.h)
+  AC_CHECK_HEADERS(sys/types.h)
+  AC_CHECK_HEADERS(fcntl.h)
   AC_CHECK_FUNCS(mkdir)
 ])
 
@@ -1188,6 +1197,7 @@ AC_DEFUN([AC_CHECK_OPENDIR],
 [
   AC_CHECK_HEADERS(dirent.h)
   AC_CHECK_FUNCS(opendir)
+  AC_CHECK_FUNCS(fdopendir)
 ])
 
 AC_DEFUN([AC_CHECK_STAT],
@@ -1200,6 +1210,11 @@ AC_DEFUN([AC_CHECK_STAT],
                 [AC_DEFINE([HAVE_STRUCT_STAT64],[],[Defined when struct stat64 is available])],
                 [],
                 [#include <sys/stat.h>])
+])
+
+AC_DEFUN([AC_CHECK_GETCWD],
+[
+  AC_CHECK_FUNCS(getcwd)
 ])
 
 AC_DEFUN([AC_CHECK_SIGSET_T],
@@ -1226,11 +1241,13 @@ AC_DEFUN([AC_CHECK_COMMON],
 [
   AC_CHECK_ENVIRON
   AC_CHECK__NSGETENVIRON
+  AC_CHECK__NSGETEXECUTABLEPATH
   AC_CHECK_REMOVE
   AC_CHECK_RENAME
   AC_CHECK_MKDIR
   AC_CHECK_OPENDIR
   AC_CHECK_STAT
+  AC_CHECK_GETCWD
   AC_CHECK_SIGSET_T
 ])
 
@@ -1368,6 +1385,8 @@ else
   #AC_FUNC_STAT
   #AC_FUNC_LSTAT
 
+  FLAGS_WINDOWS="-D_WINDOWS -D_WIN32_WINNT=0x0600 -DUNICODE -D_UNICODE"
+
   if test "$C_COMP_VISUALC" = yes; then
 
     PATH_SEP="\\\\\\\\\\\\\\\\"
@@ -1378,7 +1397,7 @@ else
       LIBS="$LIBS WinMM.Lib"
     fi
 
-    FLAGS_OBJ_DYN_LIB_EXE="$FLAGS_OBJ_DYN_LIB_EXE -D_WINDOWS -D_WIN32_WINNT=0x0600"
+    FLAGS_OBJ_DYN_LIB_EXE="$FLAGS_OBJ_DYN_LIB_EXE $FLAGS_WINDOWS"
 
     # For compatibility with Windows XP
     FLAGS_OBJ_DYN_LIB_EXE="$FLAGS_OBJ_DYN_LIB_EXE -D_ATL_XP_TARGETING"
@@ -1397,7 +1416,7 @@ else
                  LIBS="$LIBS -lwinmm"
                fi
 
-               FLAGS_OBJ_DYN_LIB_EXE="$FLAGS_OBJ_DYN_LIB_EXE -D_WINDOWS -D_WIN32_WINNT=0x0600"
+               FLAGS_OBJ_DYN_LIB_EXE="$FLAGS_OBJ_DYN_LIB_EXE $FLAGS_WINDOWS"
                ;;
 
             *) # check libraries for other systems
@@ -1426,10 +1445,10 @@ else
 
   fi
 
-  AC_CHECK_FUNCS(pipe)
-  AC_CHECK_FUNCS(socketpair)
+  AC_CHECK_FUNCS(backtrace_symbols_fd)
   AC_CHECK_FUNCS(chdir)
   AC_CHECK_FUNCS(execvp)
+  AC_CHECK_FUNCS(fcntl)
   AC_CHECK_FUNCS(getgrnam)
   AC_CHECK_FUNCS(getpid)
   AC_CHECK_FUNCS(getppid)
@@ -1437,20 +1456,32 @@ else
   AC_CHECK_FUNCS(ioctl)
   AC_CHECK_FUNCS(link)
   AC_CHECK_FUNCS(mkfifo)
+  AC_CHECK_FUNCS(mmap)
+  AC_CHECK_FUNCS(open)
+  AC_CHECK_FUNCS(pipe)
+  AC_CHECK_FUNCS(readlink)
   AC_CHECK_FUNCS(rmdir)
   AC_CHECK_FUNCS(socket)
-  AC_CHECK_FUNCS(utimes)
+  AC_CHECK_FUNCS(socketpair)
   AC_CHECK_FUNCS(strerror)
   AC_CHECK_FUNCS(symlink)
   AC_CHECK_FUNCS(sysconf)
   AC_CHECK_FUNCS(sysctl)
   AC_CHECK_FUNCS(sysctlbyname)
   AC_CHECK_FUNCS(syslog)
-  AC_CHECK_FUNCS(backtrace_symbols_fd)
   AC_CHECK_FUNCS(unlink)
+  AC_CHECK_FUNCS(utimes)
   AC_CHECK_FUNCS(waitpid)
-  AC_CHECK_FUNCS(mmap)
-  AC_CHECK_FUNCS(fcntl)
+
+  AC_CHECK_FUNCS(fstatat)
+  AC_CHECK_FUNCS(linkat)
+  AC_CHECK_FUNCS(mkdirat)
+  AC_CHECK_FUNCS(mkfifoat)
+  AC_CHECK_FUNCS(openat)
+  AC_CHECK_FUNCS(readlinkat)
+  AC_CHECK_FUNCS(renameat)
+  AC_CHECK_FUNCS(symlinkat)
+  AC_CHECK_FUNCS(unlinkat)
 
   # The following checks for library functions have been written
   # specially to catch the case where they are declared as inline

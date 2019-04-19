@@ -2,7 +2,7 @@
 
 ;;; File: "_nonstd.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -105,6 +105,38 @@
 
 (define-prim (error message . parameters)
   (##raise-error-exception message parameters))
+
+(define-prim (error-object? obj)
+  (macro-error-exception? obj))
+
+(define-prim (error-object-message err-obj)
+  (macro-check-error-exception
+    err-obj
+    1
+    (error-object-message err-obj)
+    (macro-error-exception-message err-obj)))
+
+(define-prim (error-object-irritants err-obj)
+  (macro-check-error-exception
+    err-obj
+    1
+    (error-object-irritants err-obj)
+    (macro-error-exception-parameters err-obj)))
+
+(define-runtime-syntax ##syntax-error
+  (lambda (src)
+    (##deconstruct-call
+     src
+     -2
+     (lambda (message . args)
+       (let ((m (##desourcify message)))
+         (if (##string? m)
+             (##apply ##raise-expression-parsing-exception
+                      (##cons m (##cons src (##map ##desourcify args))))
+             (##raise-expression-parsing-exception
+              'ill-formed-special-form
+              src
+              'syntax-error)))))))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -295,6 +327,7 @@
      srfi-6 SRFI-6
      srfi-8 SRFI-8
      srfi-9 SRFI-9
+     srfi-16 SRFI-16
      srfi-18 SRFI-18
      srfi-21 SRFI-21
      srfi-22 SRFI-22
@@ -307,6 +340,12 @@
 ;;;     srfi-89 SRFI-89
 ;;;     srfi-90 SRFI-90
 ;;;     srfi-91 SRFI-91
+
+     exact-closed
+     exact-complex
+     ieee-float
+     full-unicode
+     ratios
      ))
 
 (define ##cond-expand-features
@@ -314,7 +353,236 @@
 
 (define-runtime-macro (define-cond-expand-feature . features)
   (##cond-expand-features (##append features (##cond-expand-features)))
-  `(begin))
+  `(##begin))
+
+(define features
+  ##cond-expand-features)
+
+;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+(define-runtime-syntax ##case-lambda
+  (lambda (src)
+
+    (define (formals-count formals)
+      (let loop ((lst formals) (n 0))
+        (cond ((##pair? lst) (loop (##cdr lst) (##fx+ n 1)))
+              ((##null? lst) n)
+              (else          (##fx- -1 n)))))
+
+    (define (gen-var)
+      (##gensym))
+
+    (define (gen-vars n)
+      (if (##fx> n 0)
+          (##cons (gen-var) (gen-vars (##fx- n 1)))
+          '()))
+
+    (define (gen-absent-obj)
+      (##cons '##quote (##cons (macro-absent-obj) '())))
+
+    (##shape src src -2)
+
+    (let loop ((clauses (##cdr (##source-code src)))
+               (rev-cases '()) ;; reverse list of cases
+               (covered 0) ;; set of cases covered by clauses
+               (req-param-count #f)
+               (req-and-opt-param-count #f)
+               (need-rest-param? #f))
+      (if (##pair? clauses)
+          (let* ((clause-src
+                  (##sourcify (##car clauses) src))
+                 (clause
+                  (##source-code clause-src)))
+
+            (##shape src clause-src -2)
+
+            (let* ((formals
+                    (##source-code (##sourcify (##car clause) src)))
+                   (body
+                    (##cdr clause))
+                   (nparams
+                    (formals-count formals))
+                   (nparams*
+                    (if (##fx< nparams 0)
+                        (##fx- -1 nparams)
+                        nparams))
+                   (params-covered
+                    (if (##fx< nparams 0)
+                        (##arithmetic-shift -1 nparams*)
+                        (##arithmetic-shift 1 nparams)))
+                   (trigger
+                    (##bitwise-and params-covered
+                                   (##bitwise-not covered))))
+              (if (##equal? trigger 0)
+                  (begin
+                    ;; this case already covered by previous clauses
+                    (loop (##cdr clauses)
+                          rev-cases
+                          covered
+                          req-param-count
+                          req-and-opt-param-count
+                          need-rest-param?))
+                  (begin
+                    ;; this case not covered by previous clauses
+                    (loop (##cdr clauses)
+                          (##cons (##vector nparams '() formals body)
+                                  rev-cases)
+                          (##bitwise-ior trigger covered)
+                          (if req-param-count
+                              (##fxmin req-param-count nparams*)
+                              nparams*)
+                          (if req-and-opt-param-count
+                              (##fxmax req-and-opt-param-count nparams*)
+                              nparams*)
+                          (or need-rest-param?
+                              (##fx< nparams 0)))))))
+
+          (let* ((cases
+                  (##reverse rev-cases))
+                 (req-params
+                  (gen-vars req-param-count))
+                 (opt-params
+                  (gen-vars (##fx- req-and-opt-param-count
+                                   req-param-count)))
+                 (rest-param
+                  (if need-rest-param?
+                      (gen-var)
+                      '()))
+                 (params
+                  (##list->vector
+                   (##append req-params opt-params)))
+                 (proc-var
+                  (##gensym))
+                 (need-proc-var?
+                  #f))
+
+            (define (find-case i)
+              (let loop ((lst cases))
+                (if (##pair? lst)
+                    (let* ((c (##car lst))
+                           (nparams (##vector-ref c 0)))
+                      (if (if (##fx< nparams 0)
+                              (##fx>= i (##fx- -1 nparams))
+                              (##fx= i nparams))
+                          c
+                          (loop (##cdr lst))))
+                    #f)))
+
+            (define (flatten-formals formals)
+              (cond ((##pair? formals)
+                     (let* ((rest (##cdr formals))
+                            (flat-rest (flatten-formals rest)))
+                       (if (##eq? rest flat-rest)
+                           formals
+                           (##cons (##car formals)
+                                   flat-rest))))
+                    ((##null? formals)
+                     formals)
+                    (else
+                     (##cons formals
+                             '()))))
+
+            (define (gen-branch i case-i)
+              (let ((branch
+                     `(#f ;; placeholder for lambda expression or variable
+                       ,@(gen-arguments i case-i))))
+                (##vector-set! case-i
+                               1
+                               (##cons branch (##vector-ref case-i 1)))
+                branch))
+
+            (define (gen-params i)
+              (##vector->list
+               (##subvector params 0 i)))
+
+            (define (gen-arguments i case-i)
+              (let ((nparams (##vector-ref case-i 0)))
+                (if (##fx< nparams 0) ;; has rest parameter?
+                    (let ((nreq (##fx- -1 nparams)))
+                      (let loop ((j (##fx- (##fxmin req-and-opt-param-count i) 1))
+                                 (rest-arg rest-param))
+                        (if (##fx< j nreq)
+                            (##append (##vector->list
+                                       (##subvector params 0 nreq))
+                                      (##list rest-arg))
+                            (loop (##fx- j 1)
+                                  `(##cons ,(##vector-ref params j)
+                                           ,rest-arg)))))
+                    (gen-params i))))
+
+            (define (gen-dispatch i)
+              (let* ((case-i (find-case i))
+                     (nparams (if case-i (##vector-ref case-i 0) i)))
+                (cond ((and (##fx< nparams 0) ;; case with rest parameter
+                            (##fx>= i req-and-opt-param-count))
+                       (gen-branch i case-i))
+                      ((and (##not need-rest-param?)
+                            (##fx= i req-and-opt-param-count))
+                       (gen-branch i case-i))
+                      (else
+                       `(##if ,(if (##fx= i req-and-opt-param-count)
+                                   `(##null? ,rest-param)
+                                   `(##eq? ,(##vector-ref params i)
+                                           ,(gen-absent-obj)))
+                              ,(if case-i
+                                   (gen-branch i case-i)
+                                   (begin
+                                     (set! need-proc-var? #t)
+                                     `(##raise-wrong-number-of-arguments-exception-nary
+                                       ,proc-var
+                                       ,@(gen-params i))))
+                              ,(gen-dispatch (##fx+ i 1)))))))
+
+            (let ((dispatch (gen-dispatch req-param-count)))
+              (let loop ((lst cases) (rev-defs '()))
+                (if (##pair? lst)
+                    (let* ((c (##car lst))
+                           (calls (##vector-ref c 1)))
+                      (if (##pair? calls)
+                          (let* ((formals (##vector-ref c 2))
+                                 (body (##vector-ref c 3))
+                                 (branch
+                                  `(##lambda ,(flatten-formals formals)
+                                             ,@body)))
+                            (if (##null? (##cdr calls))
+                                (begin
+                                  (##set-car! (##car calls) branch)
+                                  (loop (##cdr lst)
+                                        rev-defs))
+                                (let ((var (gen-var)))
+                                  (##for-each (lambda (x)
+                                                (##set-car! x var))
+                                              calls)
+                                  (loop (##cdr lst)
+                                        (##cons (##list var branch)
+                                                rev-defs)))))
+                          (loop (##cdr lst)
+                                rev-defs)))
+                    (let ((lambda-expr
+                           `(##lambda
+                             ,(##append
+                               req-params
+                               (if (##pair? opt-params)
+                                   (##cons '#!optional
+                                           (##append
+                                            (##map (lambda (p)
+                                                     (##cons
+                                                      p
+                                                      (##cons
+                                                       (gen-absent-obj)
+                                                       '())))
+                                                   opt-params)
+                                            rest-param))
+                                   '()))
+                             ,(if (##pair? rev-defs)
+                                  `(##let ,(##reverse rev-defs)
+                                          ,dispatch)
+                                  dispatch))))
+                      (##expand-source-template
+                       src
+                       (if need-proc-var?
+                           `(##letrec ((,proc-var ,lambda-expr)) ,proc-var)
+                           lambda-expr)))))))))))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -327,8 +595,30 @@
        (##expand-source-template
         src
         `(##call-with-values
-          (lambda () ,expression)
-          (lambda ,formals ,@body)))))))
+          (##lambda () ,expression)
+          (##lambda ,formals ,@body)))))))
+
+;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+(define-runtime-syntax ##when
+  (lambda (src)
+    (##deconstruct-call
+     src
+     -3
+     (lambda (test . expressions)
+       (##expand-source-template
+        src
+        `(##if ,test (##begin ,@expressions)))))))
+
+(define-runtime-syntax ##unless
+  (lambda (src)
+    (##deconstruct-call
+     src
+     -3
+     (lambda (test . expressions)
+       (##expand-source-template
+        src
+        `(##if (##not ,test) (##begin ,@expressions)))))))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -359,6 +649,7 @@
            extender
            constructor
            constant-constructor
+           copier
            predicate
            implementer
            type-exhibitor
@@ -377,9 +668,9 @@
                    (field-name
                     (##vector-ref descr 0))
                    (options
-                    (##vector-ref descr 4))
-                   (attributes
                     (##vector-ref descr 5))
+                   (attributes
+                    (##vector-ref descr 6))
                    (init
                     (cond ((##assq 'init: attributes)
                            =>
@@ -516,6 +807,8 @@
                 (##vector-ref descr 2))
                (setter
                 (##vector-ref descr 3))
+               (fsetter
+                (##vector-ref descr 4))
                (getter-def
                 (if getter
                     (let ((getter-name
@@ -580,8 +873,45 @@
                                ,field-index
                                ,type-expression
                                ,setter-name)))))
+                    `()))
+               (fsetter-def
+                (if fsetter
+                    (let ((fsetter-name
+                           (if (##eq? fsetter #t)
+                               (##symbol-append prefix
+                                                name
+                                                '-
+                                                field-name
+                                                '-set)
+                               fsetter))
+                          (fsetter-method
+                           (if extender
+                               '##structure-set
+                               '##direct-structure-set)))
+                      (if macros?
+                          `((##define-macro (,fsetter-name obj val)
+                              (##list '(let ()
+                                         (##declare (extended-bindings))
+                                         ,fsetter-method)
+                                      obj
+                                      val
+                                      ,field-index
+                                      ',type-expression
+                                      #f)))
+                          `((define (,fsetter-name obj val)
+                              ((let ()
+                                 (##declare (extended-bindings))
+                                 ,fsetter-method)
+                               obj
+                               val
+                               ,field-index
+                               ,type-expression
+                               ,fsetter-name)))))
                     `())))
-          (##append getter-def (##append setter-def tail))))
+          (##append getter-def
+                    (##append setter-def
+                              (##append fsetter-def
+                                        tail)))))
 
       (define (generate-structure-type-definition)
         `(define ,type-expression
@@ -598,7 +928,7 @@
             ,super-type-dynamic-expr
             ',(##type-fields type-static))))
 
-      (define (generate-constructor-predicate-getters-setters)
+      (define (generate-constructor-copier-predicate-getters-setters)
         `(,@(if type-exhibitor
                 (if macros?
                     `((##define-macro (,type-exhibitor)
@@ -643,6 +973,18 @@
                          #t))))
                 '())
 
+          ,@(if copier
+                (if macros?
+                    `((##define-macro (,copier obj)
+                        (##list '(let ()
+                                   (##declare (extended-bindings))
+                                   ##structure-copy)
+                                obj)))
+                    `((define (,copier obj)
+                        (##declare (extended-bindings))
+                        (##structure-copy obj))))
+                '())
+
           ,@(if predicate
                 (if macros?
                     `((##define-macro (,predicate obj)
@@ -683,8 +1025,8 @@
       (define (generate-definitions)
         (if generative?
             (##cons (generate-structure-type-definition)
-                    (generate-constructor-predicate-getters-setters))
-            (generate-constructor-predicate-getters-setters)))
+                    (generate-constructor-copier-predicate-getters-setters))
+            (generate-constructor-copier-predicate-getters-setters)))
 
       `(begin
 
@@ -703,7 +1045,7 @@
                               ',(if generative?
                                     (generate-structure-type-definition)
                                     '(begin)))
-                           (generate-constructor-predicate-getters-setters))
+                           (generate-constructor-copier-predicate-getters-setters))
                    (##list `(##define-macro (,implementer)
                               ',(##cons 'begin
                                         (generate-definitions)))))
@@ -746,7 +1088,9 @@
           (read-write:    . (-3 . 0))
           (read-only:     . (-3 . 2))
           (equality-test: . (-5 . 0))
-          (equality-skip: . (-5 . 4))))
+          (equality-skip: . (-5 . 4))
+          (functional-setter:    . (-17 . 0))
+          (no-functional-setter: . (-17 . 16))))
 
       (define (update-options options opt)
         (let* ((x (##cdr opt))
@@ -758,6 +1102,7 @@
                field-name
                getter
                setter
+               fsetter
                local-options
                rest)
         (let loop2 ((lst2 rest)
@@ -793,9 +1138,14 @@
                  (let ((read-only?
                         (##not
                          (##fx= (##fxand local-options 2)
-                                0))))
-                   (if (and (##symbol? setter)
-                            read-only?)
+                                0)))
+                       (functional-setter?
+                        (##fx= (##fxand local-options 16)
+                               0)))
+                   (if (or (and (##symbol? setter)
+                                read-only?)
+                           (and (##symbol? fsetter)
+                                (##not functional-setter?)))
                        (err)
                        (loop1 (##cdr lst)
                               (##fx+ field-index 1)
@@ -807,6 +1157,7 @@
                                                (##fx+ field-index 1)
                                                getter
                                                (if read-only? #f setter)
+                                               (if functional-setter? fsetter #f)
                                                local-options
                                                attributes))
                                       rev-fields)))))
@@ -821,6 +1172,7 @@
                            next
                            #t
                            #t
+                           #t
                            options
                            '())
                           (err)))
@@ -832,36 +1184,67 @@
                             (if (##pair? rest)
                                 (let ((getter (##car rest)))
                                   (if (##symbol? getter)
-                                      (let ((rest (##cdr rest)))
+                                      (let ((rest (##cdr rest))
+                                            (opts (##fxior options 18)))
                                         (if (##pair? rest)
                                             (let ((setter (##car rest)))
-                                              (if (##symbol? setter)
-                                                  (parse-field-attributes
-                                                   field-name
-                                                   getter
-                                                   setter
-                                                   (##fxand options -3)
-                                                   (##cdr rest))
+                                              (if (or (##symbol? setter)
+                                                      (##not setter))
+                                                  (let ((rest (##cdr rest))
+                                                        (opts (if setter
+                                                                  (##fxand opts -3)
+                                                                  opts)))
+                                                    (if (##pair? rest)
+                                                        (let ((fsetter (##car rest)))
+                                                          (if (or (##symbol? fsetter)
+                                                                  (##not fsetter))
+                                                              (parse-field-attributes
+                                                               field-name
+                                                               getter
+                                                               setter
+                                                               fsetter
+                                                               (if fsetter
+                                                                   (##fxand opts -17)
+                                                                   opts)
+                                                               (##cdr rest))
+                                                              (parse-field-attributes
+                                                               field-name
+                                                               getter
+                                                               setter
+                                                               #f
+                                                               opts
+                                                               rest)))
+                                                        (parse-field-attributes
+                                                         field-name
+                                                         getter
+                                                         setter
+                                                         #f
+                                                         opts
+                                                         rest)))
                                                   (parse-field-attributes
                                                    field-name
                                                    getter
                                                    #f
-                                                   (##fxior options 2)
+                                                   #f
+                                                   opts
                                                    rest)))
                                             (parse-field-attributes
                                              field-name
                                              getter
                                              #f
-                                             (##fxior options 2)
+                                             #f
+                                             opts
                                              rest)))
                                       (parse-field-attributes
                                        field-name
+                                       #t
                                        #t
                                        #t
                                        options
                                        rest)))
                                 (parse-field-attributes
                                  field-name
+                                 #t
                                  #t
                                  #t
                                  options
@@ -871,6 +1254,7 @@
                                 '(id:
                                   constructor:
                                   constant-constructor:
+                                  copier:
                                   predicate:
                                   extender:
                                   implementer:
@@ -902,7 +1286,8 @@
                                          (or (##symbol? val)
                                              (and (##memq
                                                    next
-                                                   '(predicate:
+                                                   '(copier:
+                                                     predicate:
                                                      constant-constructor:))
                                                   (##not val)))))
                                   (loop1 (##cdr rest)
@@ -980,6 +1365,16 @@
                             (##symbol-append prefix
                                              'make-constant-
                                              name))))
+                    (copier
+                     (cond ((##assq 'copier: flags)
+                            =>
+                            ##cdr)
+                           ((##not constructor)
+                            #f)
+                           (else
+                            (##symbol-append prefix
+                                             name
+                                             '-copy))))
                     (predicate
                      (cond ((##assq 'predicate: flags)
                             =>
@@ -1031,6 +1426,7 @@
                     extender
                     constructor
                     constant-constructor
+                    copier
                     predicate
                     implementer
                     type-exhibitor
@@ -1087,21 +1483,23 @@
    (##apply ##string-append
             (##map ##symbol->string symbols))))
 
-(define-runtime-macro (define-type . args)
+(define-runtime-macro (##define-type . args)
   (##define-type-expand 'define-type #f #f args))
 
-(define-runtime-macro (define-structure . args)
+(define-runtime-macro (##define-structure . args)
   (##define-type-expand 'define-structure #f #f args))
 
 (define-runtime-macro (define-record-type name constructor predicate . fields)
-  `(define-type ,name
+  `(##define-type ,name
      constructor: ,constructor
+     copier: #f
      predicate: ,predicate
+     no-functional-setter:
      ,@fields))
 
 ;;; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-(define-runtime-macro (define-type-of-thread . args)
+(define-runtime-macro (##define-type-of-thread . args)
   (##define-type-expand
     'define-type-of-thread
     (macro-type-thread)
@@ -1352,15 +1750,65 @@
 
 (define-prim (exit #!optional (status (macro-absent-obj)))
   (if (##eq? status (macro-absent-obj))
-      (##exit)
+      (##exit (macro-EXIT-CODE-OK))
       (macro-force-vars (status)
-        (macro-check-exact-unsigned-int8 status 1 (exit status)
-          (##exit status)))))
+        (if (##eq? status #f)
+            (##exit (macro-EXIT-CODE-SOFTWARE))
+            (macro-check-exact-unsigned-int8 status 1 (exit status)
+              (##exit status))))))
 
-(define-prim (##getenv name #!optional (default-value (macro-absent-obj)))
+(define-prim (emergency-exit #!optional (status (macro-absent-obj)))
+  (if (##eq? status (macro-absent-obj))
+      (##exit-abruptly (macro-EXIT-CODE-OK))
+      (macro-force-vars (status)
+        (if (##eq? status #f)
+            (##exit-abruptly (macro-EXIT-CODE-SOFTWARE))
+            (macro-check-exact-unsigned-int8 status 1 (emergency-exit status)
+              (##exit-abruptly status))))))
+
+(define-prim (##get-environment-variables)
+  (let ((result (##os-environ)))
+    (if (##fixnum? result)
+        (##raise-os-exception #f result get-environment-variables)
+        (begin
+          (let loop1 ((lst result))
+            (if (##pair? lst)
+                (let ((s (##car lst)))
+                  (let loop2 ((i 0))
+                    (if (##fx< i (##string-length s))
+                        (let ((c (##string-ref s i)))
+                          (if (##char=? c #\=)
+                              (##set-car!
+                               lst
+                               (##cons (##substring s
+                                                    0
+                                                    i)
+                                       (##substring s
+                                                    (##fx+ i 1)
+                                                    (##string-length s))))
+                              (loop2 (##fx+ i 1))))
+                        (##set-car!
+                         lst
+                         (##cons s
+                                 ""))))
+                  (loop1 (##cdr lst)))))
+          result))))
+
+(define-prim (get-environment-variables)
+  (##get-environment-variables))
+
+(define-prim (##getenv
+              name
+              #!optional
+              (default-value (macro-absent-obj)))
   (let ((result (##os-getenv name)))
     (cond ((##fixnum? result)
-           (##raise-os-exception #f result getenv name default-value))
+           (##raise-os-exception
+            #f
+            result
+            getenv
+            name
+            default-value))
           ((##not result)
            (if (##eq? default-value (macro-absent-obj))
                (##raise-unbound-os-environment-variable-exception
@@ -1374,6 +1822,21 @@
   (macro-force-vars (name)
     (macro-check-string name 1 (getenv name default-value)
       (##getenv name default-value))))
+
+(define-prim (##get-environment-variable name)
+  (let ((result (##os-getenv name)))
+    (if (##fixnum? result)
+        (##raise-os-exception
+         #f
+         result
+         get-environment-variable
+         name)
+        result)))
+
+(define-prim (get-environment-variable name)
+  (macro-force-vars (name)
+    (macro-check-string name 1 (get-environment-variable name)
+      (##get-environment-variable name))))
 
 (define-prim (##setenv name #!optional (value (macro-absent-obj)))
   (let ((code (##os-setenv name value)))
@@ -1994,7 +2457,8 @@
           (cond ((##fixnum? dir)
                  (err dir))
                 (dir
-                 (expand relpath dir))
+                 (expand relpath
+                         (expand dir cd)))
                 (else
                  (let ((dir (##os-path-gambitdir)))
                    (cond ((##fixnum? dir)
@@ -2315,6 +2779,20 @@
   (macro-force-vars (path)
     (macro-check-string path 1 (path-strip-volume path)
       (##path-strip-volume path))))
+
+;;;----------------------------------------------------------------------------
+
+(define-prim (##executable-path)
+  (let ((path (##os-executable-path)))
+    (if (##fixnum? path)
+        (##raise-os-exception
+         #f
+         path
+         executable-path)
+        (##path-normalize path))))
+
+(define-prim (executable-path)
+  (##executable-path))
 
 ;;;----------------------------------------------------------------------------
 

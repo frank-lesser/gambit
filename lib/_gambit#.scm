@@ -2,7 +2,7 @@
 
 ;;; File: "_gambit#.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -120,6 +120,19 @@
                 (error "define-prim can't inline" name)))))
 
       ((_ id val)
+       #'(define-prim-no-inline id val)))))
+
+(macro-define-syntax define-prim-no-inline
+  (lambda (stx)
+    (syntax-case stx ()
+
+      ((_ (id . params) body ...)
+       #'(define-prim-no-inline id
+           (lambda params
+             (##declare (inline))
+             body ...)))
+
+      ((_ id val)
        #'(define id
            (let ()
              (##declare
@@ -179,10 +192,11 @@
 ;; A GC hash table is represented by an object vector
 ;; slot 0 = link to next GC hash table
 ;; slot 1 = flags (1=weak keys, 2=weak values, 4=need rehashing, ...)
-;; slot 2 = na (number of allocations before need to grow)
-;; slot 3 = nd (number of deallocations before need to shrink)
-;; slot 4 = key of entry #0
-;; slot 5 = value of entry #0
+;; slot 2 = count (nb. of keys in table)
+;; slot 3 = min-count (nb. of keys below which table needs to shrink)
+;; slot 4 = free (nb. of keys that can be added to table before need to grow)
+;; slot 5 = key of entry #0
+;; slot 6 = value of entry #0
 
 (##define-macro (macro-gc-hash-table-nb-entries ht)
   `(##fxwraplogical-shift-right
@@ -190,6 +204,7 @@
     1))
 
 (##define-macro (macro-gc-hash-table-minimal-nb-entries) 5)
+(##define-macro (macro-gc-hash-table-minimal-free) 2) ;; need 2 free entries for union/find
 
 (##define-macro (macro-make-minimal-gc-hash-table flags count)
   `(let ((ht
@@ -198,7 +213,8 @@
            ,flags
            ,count
            0 ;; min-count
-           4 ;; free
+           3 ;; free = (- (macro-gc-hash-table-minimal-nb-entries)
+             ;;           (macro-gc-hash-table-minimal-free))
            (macro-unused-obj) (macro-unused-obj)
            (macro-unused-obj) (macro-unused-obj)
            (macro-unused-obj) (macro-unused-obj)
@@ -220,6 +236,11 @@
      (##subtype-set! ht (macro-subtype-weak))
      ht))
 
+(##define-macro (macro-gc-hash-table-size ht)
+  `(##fxarithmetic-shift-right
+    (##fx- (##vector-length ,ht) (macro-gc-hash-table-key0))
+    1))
+
 (##define-macro (macro-gc-hash-table-flags ht)        `(macro-slot 1 ,ht))
 (##define-macro (macro-gc-hash-table-flags-set! ht x) `(macro-slot 1 ,ht ,x))
 (##define-macro (macro-gc-hash-table-count ht)        `(macro-slot 2 ,ht))
@@ -238,6 +259,7 @@
 (##define-macro (macro-gc-hash-table-flag-entry-deleted)  8)
 (##define-macro (macro-gc-hash-table-flag-mem-alloc-keys) 16)
 (##define-macro (macro-gc-hash-table-flag-need-rehash)    32)
+(##define-macro (macro-gc-hash-table-flag-union-find)     64)
 
 (##define-macro (macro-gc-hash-table-key-ref ht i*2)
   `(##vector-ref ,ht (##fx+ ,i*2 (macro-gc-hash-table-key0))))
@@ -597,11 +619,15 @@
   (let ()
 
     (define macro-check-type (sym 'macro-check- type-id))
+    (define macro-test-type (sym 'macro-test- type-id))
     (define ##fail-check-type (sym '##fail-check- type-id))
 
     `(begin
        (##define-macro (,(sym 'implement-check-type- type-id));;;;;;;;;;
          '(define-fail-check-type ,type-id ,type))
+
+     (##define-macro (,macro-test-type var)
+       `(,',predicate ,var ,@',arguments))
 
      (##define-macro (,macro-check-type var arg-num form expr)
 
@@ -730,6 +756,7 @@
            extender
            constructor
            constant-constructor
+           copier
            predicate
            implementer
            type-exhibitor
@@ -751,6 +778,8 @@
                 (##vector-ref descr 2))
                (setter
                 (##vector-ref descr 3))
+               (fsetter
+                (##vector-ref descr 4))
                (getter-def
                 (if getter
                   (let ((getter-name
@@ -802,8 +831,37 @@
                            1
                            (,setter-name obj val)
                            (,macro-setter-name obj val))))))
+                  `()))
+               (fsetter-def
+                (if fsetter
+                  (let ((fsetter-name
+                         (if (##eq? fsetter #t)
+                           (##symbol-append prefix
+                                            name
+                                            '-
+                                            field-name
+                                            '-set)
+                           fsetter))
+                        (macro-fsetter-name
+                         (if (##eq? fsetter #t)
+                           (##symbol-append 'macro-
+                                            name
+                                            '-
+                                            field-name
+                                            '-set)
+                           (##symbol-append 'macro-
+                                            fsetter))))
+                    `((define-prim (,fsetter-name obj val)
+                        (macro-force-vars (obj)
+                          (,check
+                           obj
+                           1
+                           (,fsetter-name obj val)
+                           (,macro-fsetter-name obj val))))))
                   `())))
-          (##append getter-def (##append setter-def tail))))
+          (##append getter-def
+                    (##append setter-def
+                              (##append fsetter-def tail)))))
 
       (define (generate-constructor-predicate-getters-setters)
         `(,@(if #f;constructor;;;;;;;;;;;
@@ -852,7 +910,9 @@
            type-exhibitor: ,(##symbol-append 'macro-type- name)
            constructor: ,(##symbol-append 'macro-make- name)
            constant-constructor: ,(##symbol-append 'macro-make-constant- name)
+           copier: #f
            implementer: ,(##symbol-append 'implement-type- name)
+           no-functional-setter:
            ,@(##map (lambda (field)
                       (let* ((descr
                               (##cdr field))
@@ -862,16 +922,23 @@
                               (##vector-ref descr 2))
                              (setter
                               (##vector-ref descr 3))
-                             (options
+                             (fsetter
                               (##vector-ref descr 4))
+                             (options
+                              (##vector-ref descr 5))
                              (attributes
-                              (##vector-ref descr 5)))
+                              (##vector-ref descr 6)))
                         `(,field-name
                           ,@(if (##symbol? getter)
-                              `(,getter)
-                              `())
-                          ,@(if (##symbol? setter)
-                              `(,setter)
+                              `(,getter
+                                ,@(if (##symbol? setter)
+                                    `(,setter)
+                                    (if (##symbol? fsetter)
+                                      `(#f)
+                                      `()))
+                                ,@(if (##symbol? fsetter)
+                                    `(,fsetter)
+                                    `()))
                               `())
                           ,@(if (##fx= (##fxand options 1) 0)
                               `()
@@ -882,6 +949,9 @@
                           ,@(if (##fx= (##fxand options 4) 0)
                               `()
                               `(equality-skip:))
+                          ,@(if (##fx= (##fxand options 16) 0)
+                              `(functional-setter:)
+                              `())
                           ,@(let loop ((lst1 attributes)
                                        (lst2 '()))
                               (if (##pair? lst1)

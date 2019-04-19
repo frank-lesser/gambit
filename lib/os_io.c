@@ -1,6 +1,6 @@
 /* File: "os_io.c" */
 
-/* Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved. */
+/* Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved. */
 
 /*
  * This module implements the operating system specific routines
@@ -8,7 +8,7 @@
  */
 
 #define ___INCLUDED_FROM_OS_IO
-#define ___VERSION 409000
+#define ___VERSION 409003
 #include "gambit.h"
 
 #include "os_setup.h"
@@ -4146,15 +4146,17 @@ ___SCMOBJ client_ca_path;)
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_TLSv1)));
         case 0x301:
+#ifndef OPENSSL_NO_SSL3
           OPENSSL_CHECK_ERROR ((SSL_OP_NO_SSLv3 &
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv3)));
         case 0x300:
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#ifndef OPENSSL_NO_SSL2
           OPENSSL_CHECK_ERROR ((SSL_OP_NO_SSLv2 &
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv2)));
         case 0x200:
+#endif
 #endif
           break;
         default:
@@ -4202,7 +4204,7 @@ ___SCMOBJ client_ca_path;)
                 }
               bp = BN_bin2bn (dh1024_p, sizeof(dh1024_p), NULL);
               bg = BN_bin2bn (dh1024_g, sizeof(dh1024_g), NULL);
-              if (dh1024_p == NULL || dh1024_g == NULL)
+              if (bp == NULL || bg == NULL)
                 {
                   BN_free(bp);
                   BN_free(bg);
@@ -4381,15 +4383,17 @@ ___SCMOBJ client_ca_path;)
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_TLSv1)));
         case 0x301:
+#ifndef OPENSSL_NO_SSL3
           OPENSSL_CHECK_ERROR ((SSL_OP_NO_SSLv3 &
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv3)));
         case 0x300:
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#ifndef OPENSSL_NO_SSL2
           OPENSSL_CHECK_ERROR ((SSL_OP_NO_SSLv2 &
                                 SSL_CTX_set_options (c->tls_ctx,
                                                      SSL_OP_NO_SSLv2)));
         case 0x200:
+#endif
 #endif
           break;
         default:
@@ -6632,7 +6636,7 @@ int ignore_hidden;)
 
   d->ignore_hidden = ignore_hidden;
 
-  d->dir = opendir (path);
+  d->dir = opendir_long_path (path);
 
   if (d->dir == NULL)
     {
@@ -8514,7 +8518,7 @@ int *slave_fd_ptr;)
 #else
 
   *slave_fd_ptr = -1;
-  return *master_fd_ptr = open ("/dev/ptmx", O_RDWR | O_NOCTTY);
+  return *master_fd_ptr = open_long_path ("/dev/ptmx", O_RDWR | O_NOCTTY);
 
 #endif
 #endif
@@ -8589,7 +8593,7 @@ int *slave_fd;)
   if (grantpt (master_fd) >= 0 &&
       unlockpt (master_fd) >= 0 &&
       (name = ptsname (master_fd)) != NULL &&
-      (fd = open (name, O_RDWR)) >= 0)
+      (fd = open_long_path (name, O_RDWR)) >= 0)
     {
       int tmp;
 
@@ -9013,7 +9017,7 @@ int options;)
               }
           }
 
-          if (dir == NULL || chdir (dir) == 0)
+          if (dir == NULL || chdir_long_path (dir) == 0)
             {
 #ifdef USE_environ
               if (env != NULL)
@@ -9380,12 +9384,12 @@ int mode;)
   ___printf ("path=\"%s\" fl=%d\n", path, fl);
 #endif
 
-  if ((fd = open (path,
-                  fl,
+  if ((fd = open_long_path (path,
+                            fl,
 #ifdef O_BINARY
-                  O_BINARY|
+                            O_BINARY|
 #endif
-                  mode))
+                            mode))
       < 0)
     return fnf_or_err_code_from_errno ();
 
@@ -11508,19 +11512,21 @@ ___HIDDEN ___SCMOBJ io_module_setup ___PVOID
 #define WINSOCK_MAJOR 1
 #define WINSOCK_MINOR 1
 
-      WSADATA winsock_data;
+      {
+        WSADATA winsock_data;
 
-      if (!WSAStartup (MAKEWORD(WINSOCK_MAJOR, WINSOCK_MINOR), &winsock_data))
-        {
-          if (LOBYTE(winsock_data.wVersion) == WINSOCK_MINOR &&
-              HIBYTE(winsock_data.wVersion) == WINSOCK_MAJOR)
-            return ___FIX(___NO_ERR);
-          WSACleanup (); /* ignore error */
-        }
+        if (!WSAStartup (MAKEWORD(WINSOCK_MAJOR, WINSOCK_MINOR), &winsock_data))
+          {
+            if (LOBYTE(winsock_data.wVersion) == WINSOCK_MINOR &&
+                HIBYTE(winsock_data.wVersion) == WINSOCK_MAJOR)
+              return ___FIX(___NO_ERR);
+            WSACleanup (); /* ignore error */
+          }
 
-      e = ___FIX(___UNKNOWN_ERR);
+        e = ___FIX(___UNKNOWN_ERR);
 
-      ___device_group_cleanup (___io_mod.dgroup);
+        ___device_group_cleanup (___io_mod.dgroup);
+      }
 
 #endif
     }

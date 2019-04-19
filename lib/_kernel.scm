@@ -2,7 +2,7 @@
 
 ;;; File: "_kernel.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -871,49 +871,30 @@ end-of-code
 
    ___SCMOBJ ra;
    ___SCMOBJ promise;
-   ___SCMOBJ result;
+   int fs;
 
    ra = ___ps->temp1;
    promise = ___ps->temp2;
-   result = ___FIELD(promise,___PROMISE_RESULT);
 
-   if (promise != result)
-     {
-       /* promise is determined, return cached result */
+   /* setup internal return continuation frame */
 
-       ___COVER_FORCE_HANDLER_DETERMINED;
+   ___RETI_GET_CFS(ra,fs)
 
-       ___ps->temp2 = result;
-       ___JUMPEXTPRM(___NOTHING,ra)
-     }
-   else
-     {
-       /* promise is not determined */
+   ___ADJFP(___ROUND_TO_MULT(fs,___FRAME_ALIGN)-fs)
 
-       /* setup internal return continuation frame */
+   ___PUSH_REGS /* push all GVM registers (live or not) */
+   ___PUSH(ra)  /* push return address */
 
-       int fs;
+   ___ADJFP(-___RETI_RA)
 
-       ___RETI_GET_CFS(ra,fs)
+   ___SET_R0(___ps->internal_return)
 
-       ___ADJFP(___ROUND_TO_MULT(fs,___FRAME_ALIGN)-fs)
+   /* tail call to ##force-out-of-line */
 
-       ___PUSH_REGS /* push all GVM registers (live or not) */
-       ___PUSH(ra)  /* push return address */
+   ___PUSH_ARGS1(promise)
 
-       ___ADJFP(-___RETI_RA)
-
-       ___SET_R0(___ps->internal_return)
-
-       /* tail call to ##force-undetermined */
-
-       ___PUSH_ARGS2(promise,___FIELD(promise,___PROMISE_THUNK))
-
-       ___COVER_FORCE_HANDLER_NOT_DETERMINED;
-
-       ___JUMPPRM(___SET_NARGS(2),
-                  ___PRMCELL(___G__23__23_force_2d_undetermined.prm))
-     }
+   ___JUMPPRM(___SET_NARGS(1),
+              ___PRMCELL(___G__23__23_force_2d_out_2d_of_2d_line.prm))
 
 end-of-code
 
@@ -1217,7 +1198,7 @@ end-of-code
    int fs;
    ___SCMOBJ ira;
 
-   /* save result in case we are returning from ##force-undetermined */
+   /* save result in case we are returning from ##force-out-of-line */
 
    ___ps->temp2 = ___R1;
 
@@ -1715,27 +1696,65 @@ end-of-code
 
 ;;; Implementation of promises.
 
-(define-prim (##make-promise thunk))
-(define-prim (##promise-thunk promise))
-(define-prim (##promise-thunk-set! promise thunk))
-(define-prim (##promise-result promise))
-(define-prim (##promise-result-set! promise result))
+(define-prim (##force-out-of-line promise)
 
-(define-prim (##force-undetermined promise thunk)
-  (let ((result (##force (thunk))))
-    (##c-code #<<end-of-code
+  (declare (not interrupts-enabled))
 
-     if (___PROMISERESULT(___ARG1) == ___ARG1)
-       {
-         ___PROMISERESULTSET(___ARG1,___ARG2)
-         ___PROMISETHUNKSET(___ARG1,___FAL)
-       }
-     ___RESULT = ___PROMISERESULT(___ARG1);
+  (define-macro (macro-reentrant-semantics? state) #t)
 
-end-of-code
+  (define (nonreentrant-undetermined-case promise)
+    (error "Attempt to reenter nonreentrant promise" promise))
 
-     promise
-     result)))
+  (define (chase promise thunk)
+    (let ((result1 ;; compute promise's value by calling thunk
+           (let ()
+             (declare (interrupts-enabled))
+             (thunk))))
+      (let ((state1 (##promise-state promise)))
+        (cond ((and (macro-reentrant-semantics? state1)
+                    (##not (##eq? state1 ;; is it determined now?
+                                  (##vector-ref state1 0))))
+               (##vector-ref state1 0)) ;; ignore thunk's result
+              ((##not (##promise? result1))
+               (##vector-set! state1 0 result1) ;; cache promise's value
+               (if (macro-reentrant-semantics? state1)
+                   (##vector-set! state1 1 #f))
+               result1)
+              (else
+               ;; result1 is a promise, so we need to force it
+               (let* ((state2 (##promise-state result1))
+                      (result2 (##vector-ref state2 0)))
+                 (cond ((##not (##eq? state2 result2)) ;; is it determined?
+                        (##vector-set! state1 0 result2) ;; cache promise's value
+                        (if (macro-reentrant-semantics? state1)
+                            (##vector-set! state1 1 #f))
+                        result2)
+                       (else
+                        (let ((t (##vector-ref state2 1)))
+                          (##promise-state-set! result1 state1) ;; link states
+                          (cond ((macro-reentrant-semantics? state2)
+                                 (##vector-set! state1 1 t)
+                                 (chase promise t))
+                                ((##not t)
+                                 (nonreentrant-undetermined-case promise))
+                                (else
+                                 ;; avoid space leak through thunk
+                                 (if (macro-reentrant-semantics? state2)
+                                     (##vector-set! state2 1 #f))
+                                 (chase promise t))))))))))))
+
+  (let ((state (##promise-state promise)))
+    (if (##not (##eq? state (##vector-ref state 0))) ;; is promise determined?
+        (##vector-ref state 0) ;; return cached value
+        (let ((thunk (##vector-ref state 1)))
+          (cond ((macro-reentrant-semantics? state)
+                 (chase promise thunk))
+                ((##not thunk)
+                 (nonreentrant-undetermined-case promise))
+                (else
+                 ;; avoid space leak through thunk
+                 (##vector-set! state 1 #f)
+                 (chase promise thunk)))))))
 
 ))
 
@@ -2133,9 +2152,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+___LWS)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2175,20 +2200,22 @@ else
           }
       }
   }
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
 if (!___FIXNUMP(result))
   {
-    ___SCMOBJ fill = ___ARG2;
     if (fill == ___ABSENT)
       fill = ___FIX(0);
     for (i=0; i<n; i++)
       ___VECTORSET(result,___FIX(i),fill)
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2199,9 +2226,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((s (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+___LCS)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2241,17 +2274,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___STRINGSET(result,___FIX(i),___ARG2);
+      ___STRINGSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? s)
       (begin
         (##raise-heap-overflow-exception)
@@ -2262,9 +2298,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>___LF))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2304,17 +2346,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___S8VECTORSET(result,___FIX(i),___ARG2)
+      ___S8VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2325,9 +2370,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>___LF))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2367,17 +2418,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___U8VECTORSET(result,___FIX(i),___ARG2)
+      ___U8VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2388,9 +2442,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+1)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2430,17 +2490,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___S16VECTORSET(result,___FIX(i),___ARG2)
+      ___S16VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2451,9 +2514,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+1)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2493,17 +2562,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___U16VECTORSET(result,___FIX(i),___ARG2)
+      ___U16VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2514,9 +2586,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+2)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2556,17 +2634,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___S32VECTORSET(result,___FIX(i),___ARG2)
+      ___S32VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2577,9 +2658,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+2)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2619,17 +2706,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___U32VECTORSET(result,___FIX(i),___ARG2)
+      ___U32VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2640,9 +2730,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+3)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2691,17 +2787,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___S64VECTORSET(result,___FIX(i),___ARG2)
+      ___S64VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2712,9 +2811,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+3)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2763,17 +2868,20 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
     for (i=0; i<n; i++)
-      ___U64VECTORSET(result,___FIX(i),___ARG2)
+      ___U64VECTORSET(result,___FIX(i),fill);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2784,9 +2892,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+2)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2826,18 +2940,21 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
-    ___F64 fill = ___F64UNBOX(___ARG2);
+    ___F64 fill_f64 = ___F64UNBOX(fill);
     for (i=0; i<n; i++)
-      ___F32VECTORSET(result,___FIX(i),fill)
+      ___F32VECTORSET(result,___FIX(i),fill_f64);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -2848,9 +2965,15 @@ end-of-code
   (##declare (not interrupts-enabled))
   (let ((v (##c-code #<<end-of-code
 
+___SCMOBJ k;
+___SCMOBJ fill;
 ___SIZE_TS i;
-___SIZE_TS n = ___INT(___ARG1);
+___SIZE_TS n;
 ___SCMOBJ result;
+___POP_ARGS2(k,fill);
+___ps->saved[0] = k;
+___ps->saved[1] = fill;
+n = ___INT(k);
 if (n > ___CAST(___WORD, ___LMASK>>(___LF+3)))
   result = ___FIX(___HEAP_OVERFLOW_ERR); /* requested object is too big! */
 else
@@ -2899,18 +3022,21 @@ else
           }
       }
   }
-if (!___FIXNUMP(result) && ___ARG2 != ___ABSENT)
+k = ___ps->saved[0];
+fill = ___ps->saved[1];
+___ps->saved[0] = ___VOID;
+___ps->saved[1] = ___VOID;
+if (!___FIXNUMP(result) && fill != ___ABSENT)
   {
-    ___F64 fill = ___F64UNBOX(___ARG2);
+    ___F64 fill_f64 = ___F64UNBOX(fill);
     for (i=0; i<n; i++)
-      ___F64VECTORSET(result,___FIX(i),fill)
+      ___F64VECTORSET(result,___FIX(i),fill_f64);
   }
 ___RESULT = result;
+___PUSH_ARGS2(k,fill);
 
 end-of-code
-
-            k
-            fill)))
+)))
     (if (##fixnum? v)
       (begin
         (##raise-heap-overflow-exception)
@@ -4190,6 +4316,11 @@ end-of-code
             scheme-object
    "___os_path_normalize_directory"))
 
+(define-prim ##os-executable-path
+  (c-lambda ()
+            scheme-object
+   "___os_executable_path"))
+
 (define-prim ##remote-dbg-addr
   (c-lambda ()
             UCS-2-string
@@ -4685,16 +4816,16 @@ end-of-code
 (define-prim (##exit #!optional (status (macro-EXIT-CODE-OK)))
   (##exit-with-err-code (##fx+ status 1)))
 
-(define-prim (##exit-abnormally)
-  (##exit (macro-EXIT-CODE-SOFTWARE)))
+(define-prim (##exit-abruptly #!optional (status (macro-EXIT-CODE-SOFTWARE)))
+  (##exit-with-err-code-no-cleanup (##fx+ status 1)))
 
 (define-prim (##exit-with-exception exc)
-  (##exit-abnormally))
+  (##exit-abruptly))
 
 (##interrupt-vector-set! 1 ;; ___INTR_TERMINATE
   (lambda ()
     (##declare (not interrupts-enabled))
-    (##exit-abnormally)))
+    (##exit-abruptly)))
 
 ))
 
@@ -4896,6 +5027,17 @@ end-of-code
      (if proc proc ##structure-set!)
      (if proc (##list obj val) (##list obj val i type proc)))))
 
+(define-prim (##structure-set obj val i type proc)
+  (if (##structure-instance-of? obj (##type-id type))
+    (let ((result (##structure-copy obj)))
+      (##unchecked-structure-set! result val i type proc)
+      result)
+    (##raise-type-exception
+     1
+     type
+     (if proc proc ##structure-set)
+     (if proc (##list obj val) (##list obj val i type proc)))))
+
 (define-prim (##structure-cas! obj val oldval i type proc)
   (if (##structure-instance-of? obj (##type-id type))
     (begin
@@ -4927,6 +5069,17 @@ end-of-code
      (if proc proc ##direct-structure-set!)
      (if proc (##list obj val) (##list obj val i type proc)))))
 
+(define-prim (##direct-structure-set obj val i type proc)
+  (if (##structure-direct-instance-of? obj (##type-id type))
+    (let ((result (##structure-copy obj)))
+      (##unchecked-structure-set! result val i type proc)
+      result)
+    (##raise-type-exception
+     1
+     type
+     (if proc proc ##direct-structure-set)
+     (if proc (##list obj val) (##list obj val i type proc)))))
+
 (define-prim (##direct-structure-cas! obj val oldval i type proc)
   (if (##structure-direct-instance-of? obj (##type-id type))
     (begin
@@ -4945,6 +5098,22 @@ end-of-code
 (define-prim (##unchecked-structure-cas! obj val oldval i type proc)
   ;; TODO: remove after bootstrap
   (##vector-cas! obj i val oldval))
+
+(define-prim (##structure-copy obj)
+  (let* ((len (##structure-length obj))
+         (type (##structure-type obj))
+         (result (##make-structure type len)))
+    (let loop ((i (##fx- len 1)))
+      (if (##fx> i 0)
+          (begin
+            (##unchecked-structure-set!
+             result
+             (##unchecked-structure-ref obj i type ##structure-copy)
+             i
+             type
+             ##structure-copy)
+            (loop (##fx- i 1)))
+          result))))
 
 ;;;----------------------------------------------------------------------------
 

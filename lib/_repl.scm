@@ -2,7 +2,7 @@
 
 ;;; File: "_repl.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -676,12 +676,20 @@
 (define-prim (##procedure-name p)
   (and (##procedure? p)
        (or (and (##interp-procedure? p)
-                (let* (($code (##interp-procedure-code p))
-                       (rte (##interp-procedure-rte p)))
-                  (##object->lexical-var->identifier
-                   (macro-code-cte $code)
-                   rte
-                   p)))
+                (let* (($code
+                        (##interp-procedure-code p))
+                       (rte
+                        (##interp-procedure-rte p))
+                       (id
+                        (##object->lexical-var->identifier
+                         (macro-code-cte $code)
+                         rte
+                         p)))
+                  (and id
+                       (if (##uninterned-symbol? id)
+                           (or (##object->global-var->identifier p)
+                               id)
+                           id))))
            (##object->global-var->identifier p))))
 
 (define-prim (##object->lexical-var->identifier cte rte obj)
@@ -3150,7 +3158,7 @@
                             (macro-debug-settings-user-intr-quit))))
           (if (and quit?
                    (##fx= (macro-debug-settings-level settings) 0))
-              (##exit-abnormally)
+              (##exit-abruptly)
               (##handle-interrupt quit?))))))
 
 (define-prim (##handle-interrupt quit?)
@@ -3165,7 +3173,7 @@
          output-port)
         (##newline output-port)
         (if quit?
-            (##exit-abnormally)
+            (##exit-abruptly)
             #f))))))
 
 (set! ##primordial-exception-handler-hook ##repl-exception-handler-hook)
@@ -3418,12 +3426,18 @@
            (display-call))
 
           ((macro-expression-parsing-exception? exc)
-           (let ((x
-                  (##assq (macro-expression-parsing-exception-kind exc)
-                          ##expression-parsing-exception-names)))
-             (##write-string
-              (if x (##cdr x) "Unknown expression parsing exception")
-              port))
+           (let* ((kind
+                   (macro-expression-parsing-exception-kind exc))
+                  (name
+                   (if (##string? kind)
+                       kind
+                       (let ((x
+                              (##assq kind
+                                      ##expression-parsing-exception-names)))
+                         (if x
+                             (##cdr x)
+                             "Unknown expression parsing exception")))))
+             (##write-string name port))
            (write-items (macro-expression-parsing-exception-parameters exc))
            (##newline port)
            (let* ((source (macro-expression-parsing-exception-source exc))
@@ -3435,9 +3449,9 @@
            (##write-string "Heap overflow" port)
            (##newline port))
 
-          ((macro-improper-length-list-exception? exc)
-           (display-arg-num (macro-improper-length-list-exception-arg-num exc))
-           (##write-string "List is not of proper length" port)
+          ((macro-length-mismatch-exception? exc)
+           (display-arg-num (macro-length-mismatch-exception-arg-num exc))
+           (##write-string "Length does not match other arguments" port)
            (##newline port)
            (display-call))
 
@@ -3595,6 +3609,11 @@
            (##newline port)
            (display-call))
 
+          ((macro-invalid-utf8-encoding-exception? exc)
+           (##write-string "Invalid UTF-8 encoding" port)
+           (##newline port)
+           (display-call))
+
           (else
            (##write-string "This object was raised: " port)
            (##write exc port)
@@ -3653,10 +3672,10 @@
           (macro-nonempty-input-port-character-buffer-exception-procedure exc)
           (macro-nonempty-input-port-character-buffer-exception-arguments exc)))
 
-        ((macro-improper-length-list-exception? exc)
+        ((macro-length-mismatch-exception? exc)
          (##cons
-          (macro-improper-length-list-exception-procedure exc)
-          (macro-improper-length-list-exception-arguments exc)))
+          (macro-length-mismatch-exception-procedure exc)
+          (macro-length-mismatch-exception-arguments exc)))
 
         ((macro-join-timeout-exception? exc)
          (##cons
@@ -3809,11 +3828,13 @@
     (pair-list                    . "PAIR LIST")
     (char                         . "CHARACTER")
     (char-list                    . "CHARACTER LIST")
+    (char-vector                  . "CHARACTER VECTOR")
     (string                       . "STRING")
     (string-list                  . "STRING LIST")
     (list                         . "LIST")
     (symbol                       . "SYMBOL")
     (keyword                      . "KEYWORD")
+    (boolean                      . "BOOLEAN")
     (vector                       . "VECTOR")
     (vector-list                  . "VECTOR LIST")
     (s8vector                     . "S8VECTOR")
@@ -4297,11 +4318,37 @@
 
 ;;;----------------------------------------------------------------------------
 
+;; REPL server.
+
+(define (##startup-remote-dbg)
+  (let ((remote-dbg-addr (##remote-dbg-addr)))
+    (if remote-dbg-addr
+        (let ((tgroup ##tcp-service-tgroup))
+          (##tcp-service-register!
+           (##list local-port-number: 44555
+                   local-address: remote-dbg-addr
+                   output-buffering: #f)
+           (lambda ()
+             (let ((repl-channel
+                    (##make-repl-channel-ports
+                     (##current-input-port)
+                     (##current-output-port))))
+               (macro-thread-repl-channel-set!
+                (macro-current-thread)
+                repl-channel))
+             (##repl-debug-main))
+           tgroup
+           tgroup)))))
+
+;;;----------------------------------------------------------------------------
+
 ;; enable processing of heartbeat interrupts, user interrupts, GC
 ;; interrupts, etc.
 
 (##enable-interrupts!)
 
 (##startup-parallelism!)
+
+(##startup-remote-dbg)
 
 ;;;============================================================================

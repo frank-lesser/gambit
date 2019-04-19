@@ -2,15 +2,15 @@
 
 ;;; File: "_std.scm"
 
-;;; Copyright (c) 1994-2018 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 1994-2019 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
 ;; Implementation of exceptions.
 
-(implement-library-type-improper-length-list-exception)
+(implement-library-type-length-mismatch-exception)
 
-(define-prim (##raise-improper-length-list-exception arg-num proc . args);;;;;;;;;;;
+(define-prim (##raise-length-mismatch-exception arg-num proc . args);;;;;;;;;;;
   (##extract-procedure-and-arguments
    proc
    args
@@ -19,7 +19,7 @@
    #f
    (lambda (procedure arguments arg-num dummy1 dummy2)
      (macro-raise
-      (macro-make-improper-length-list-exception procedure arguments arg-num)))))
+      (macro-make-length-mismatch-exception procedure arguments arg-num)))))
 
 ;;;----------------------------------------------------------------------------
 
@@ -35,6 +35,9 @@
   macro-force-vars
   macro-check-char
   macro-check-char-list
+  macro-test-char
+  ##fail-check-char
+  define-map-and-for-each
   ##char=?)
 
 (define-prim-vector-procedures
@@ -43,6 +46,9 @@
   macro-no-force
   macro-no-check
   macro-no-check
+  #f
+  #f
+  define-map-and-for-each
   ##equal?)
 
 (define-prim-vector-procedures
@@ -51,6 +57,9 @@
   macro-force-vars
   macro-check-exact-signed-int8
   macro-check-exact-signed-int8-list
+  macro-test-exact-signed-int8
+  ##fail-check-exact-signed-int8
+  #f
   ##fx=)
 
 (define-prim-vector-procedures
@@ -59,6 +68,9 @@
   macro-force-vars
   macro-check-exact-unsigned-int8
   macro-check-exact-unsigned-int8-list
+  macro-test-exact-unsigned-int8
+  ##fail-check-exact-unsigned-int8
+  #f
   ##fx=)
 
 (define-prim-vector-procedures
@@ -67,6 +79,9 @@
   macro-force-vars
   macro-check-exact-signed-int16
   macro-check-exact-signed-int16-list
+  macro-test-exact-signed-int16
+  ##fail-check-exact-signed-int16
+  #f
   ##fx=)
 
 (define-prim-vector-procedures
@@ -75,6 +90,9 @@
   macro-force-vars
   macro-check-exact-unsigned-int16
   macro-check-exact-unsigned-int16-list
+  macro-test-exact-unsigned-int16
+  ##fail-check-exact-unsigned-int16
+  #f
   ##fx=)
 
 (define-prim-vector-procedures
@@ -83,6 +101,9 @@
   macro-force-vars
   macro-check-exact-signed-int32
   macro-check-exact-signed-int32-list
+  macro-test-exact-signed-int32
+  ##fail-check-exact-signed-int32
+  #f
   ##eqv?)
 
 (define-prim-vector-procedures
@@ -91,6 +112,9 @@
   macro-force-vars
   macro-check-exact-unsigned-int32
   macro-check-exact-unsigned-int32-list
+  macro-test-exact-unsigned-int32
+  ##fail-check-exact-unsigned-int32
+  #f
   ##eqv?)
 
 (define-prim-vector-procedures
@@ -99,6 +123,9 @@
   macro-force-vars
   macro-check-exact-signed-int64
   macro-check-exact-signed-int64-list
+  macro-test-exact-signed-int64
+  ##fail-check-exact-signed-int64
+  #f
   ##eqv?)
 
 (define-prim-vector-procedures
@@ -107,6 +134,9 @@
   macro-force-vars
   macro-check-exact-unsigned-int64
   macro-check-exact-unsigned-int64-list
+  macro-test-exact-unsigned-int64
+  ##fail-check-exact-unsigned-int64
+  #f
   ##eqv?)
 
 (define-prim-vector-procedures
@@ -115,6 +145,9 @@
   macro-force-vars
   macro-check-inexact-real
   macro-check-inexact-real-list
+  macro-test-inexact-real
+  ##fail-check-inexact-real
+  #f
   ##fleqv?)
 
 (define-prim-vector-procedures
@@ -123,6 +156,9 @@
   macro-force-vars
   macro-check-inexact-real
   macro-check-inexact-real-list
+  macro-test-inexact-real
+  ##fail-check-inexact-real
+  #f
   ##fleqv?)
 
 (define-prim (##vector-cas! vect k val oldval)
@@ -174,6 +210,360 @@
                   (vector-inc! vect k v)
                   (##vector-inc! vect k val))))))))))
 
+(define bytevector?        u8vector?)
+(define make-bytevector    make-u8vector)
+(define bytevector         u8vector)
+(define bytevector-length  u8vector-length)
+(define bytevector-u8-ref  u8vector-ref)
+(define bytevector-u8-set! u8vector-set!)
+(define bytevector-copy    u8vector-copy)
+(define bytevector-copy!   u8vector-copy!)
+(define bytevector-append  u8vector-append)
+
+;;;----------------------------------------------------------------------------
+
+;; UTF-8 encoding and decoding
+
+(implement-library-type-invalid-utf8-encoding-exception)
+
+(define-prim (##raise-invalid-utf8-encoding-exception proc . args)
+  (##extract-procedure-and-arguments
+   proc
+   args
+   #f
+   #f
+   #f
+   (lambda (procedure arguments dummy1 dummy2 dummy3)
+     (macro-raise
+      (macro-make-invalid-utf8-encoding-exception
+       procedure
+       arguments)))))
+
+(define-prim (##string->utf8-length
+              str
+              #!optional
+              (start 0)
+              (end (##string-length str)))
+  (let loop ((i start)
+             (len 0))
+    (if (##fx< i end)
+        (let ((c (##char->integer (##string-ref str i))))
+          (cond ((##fx<= c #x7f)
+                 ;; 1 byte encoding (ASCII)
+                 (loop (##fx+ i 1)
+                       (##fx+ len 1)))
+                ((##fx<= c #x7ff)
+                 ;; 2 byte encoding
+                 (loop (##fx+ i 1)
+                       (##fx+ len 2)))
+                ((##fx<= c #xffff)
+                 ;; 3 byte encoding
+                 (loop (##fx+ i 1)
+                       (##fx+ len 3)))
+                (else
+                 ;; 4 byte encoding
+                 (loop (##fx+ i 1)
+                       (##fx+ len 4)))))
+        len)))
+
+(define-prim (##string->utf8
+              str
+              #!optional
+              (start 0)
+              (end (##string-length str)))
+  (let* ((len (##string->utf8-length str start end))
+         (result (##make-u8vector len)))
+    (if (##fx= len (##fx- end start))
+        (let loop1 ((i 0))
+          (if (##fx< i end)
+              (begin
+                (##u8vector-set!
+                 result
+                 i
+                 (##char->integer
+                  (##string-ref str (##fx+ start i))))
+                (loop1 (##fx+ i 1)))
+              result))
+        (let loop2 ((i start)
+                    (j 0))
+          (if (and (##fx< i end)
+                   (##fx< j len)) ;; account for str mutation by other thread
+              (let ((c (##char->integer (##string-ref str i))))
+                (cond ((##fx<= c #x7f)
+                       ;; 1 byte encoding (ASCII)
+                       (##u8vector-set! result j c)
+                       (loop2 (##fx+ i 1)
+                              (##fx+ j 1)))
+                      ((##fx<= c #x7ff)
+                       ;; 2 byte encoding
+                       (##u8vector-set!
+                        result
+                        j
+                        (##fx+ #xc0 (##fxarithmetic-shift-right c 6)))
+                       (##u8vector-set!
+                        result
+                        (##fx+ j 1)
+                        (##fx+ #x80 (##fxand #x3f c)))
+                       (loop2 (##fx+ i 1)
+                              (##fx+ j 2)))
+                      ((##fx<= c #xffff)
+                       ;; 3 byte encoding
+                       (##u8vector-set!
+                        result
+                        j
+                        (##fx+ #xe0 (##fxarithmetic-shift-right c 12)))
+                       (##u8vector-set!
+                        result
+                        (##fx+ j 1)
+                        (##fx+ #x80 (##fxand #x3f (##fxarithmetic-shift-right c 6))))
+                       (##u8vector-set!
+                        result
+                        (##fx+ j 2)
+                        (##fx+ #x80 (##fxand #x3f c)))
+                       (loop2 (##fx+ i 1)
+                              (##fx+ j 3)))
+                      (else
+                       ;; 4 byte encoding
+                       (##u8vector-set!
+                        result
+                        j
+                        (##fx+ #xf0 (##fxarithmetic-shift-right c 18)))
+                       (##u8vector-set!
+                        result
+                        (##fx+ j 1)
+                        (##fx+ #x80 (##fxand #x3f (##fxarithmetic-shift-right c 12))))
+                       (##u8vector-set!
+                        result
+                        (##fx+ j 2)
+                        (##fx+ #x80 (##fxand #x3f (##fxarithmetic-shift-right c 6))))
+                       (##u8vector-set!
+                        result
+                        (##fx+ j 3)
+                        (##fx+ #x80 (##fxand #x3f c)))
+                       (loop2 (##fx+ i 1)
+                              (##fx+ j 4)))))
+              result)))))
+
+(define-prim (string->utf8
+              str
+              #!optional
+              (start (macro-absent-obj))
+              (end (macro-absent-obj)))
+  (macro-force-vars (str start end)
+    (macro-check-string
+      str
+      1
+      (string->utf8 str start end)
+      (if (##eq? start (macro-absent-obj))
+          (##string->utf8 str)
+          (macro-check-index-range-incl
+            start
+            2
+            0
+            (##string-length str)
+            (string->utf8 str start end)
+            (if (##eq? end (macro-absent-obj))
+                (##string->utf8 str start)
+                (macro-check-index-range-incl
+                  end
+                  3
+                  start
+                  (##string-length str)
+                  (string->utf8 str start end)
+                  (##string->utf8 str start end))))))))
+
+(define-prim (##utf8->string-length
+              u8vect
+              #!optional
+              (start 0)
+              (end (##u8vector-length u8vect)))
+  (let loop ((i start)
+             (len 0))
+    (if (##fx< i end)
+        (let ((b0 (##u8vector-ref u8vect i)))
+          (cond ((##fx< b0 #x80)
+                 ;; 1 byte encoding (ASCII)
+                 (loop (##fx+ i 1)
+                       (##fx+ len 1)))
+                ((##fx< b0 #xe0)
+                 ;; 2 byte encoding or invalid encoding
+                 (loop (##fx+ i 2)
+                       (##fx+ len 1)))
+                ((##fx< b0 #xf0)
+                 ;; 3 byte encoding or invalid encoding
+                 (loop (##fx+ i 3)
+                       (##fx+ len 1)))
+                (else
+                 ;; 4 byte encoding or invalid encoding
+                 (loop (##fx+ i 4)
+                       (##fx+ len 1)))))
+        (if (##fx> i end)
+            0 ;; invalid or truncated encoding
+            len))))
+
+(define-prim (##utf8->string
+              u8vect
+              #!optional
+              (start 0)
+              (end (##u8vector-length u8vect)))
+
+  (define (invalid-utf8)
+    (##raise-invalid-utf8-encoding-exception utf8->string u8vect start end))
+
+  (let* ((len (##utf8->string-length u8vect start end))
+         (result (##make-string len)))
+    (if (##fx= len (##fx- end start))
+        (let loop1 ((i 0))
+          (if (##fx< i end)
+              (begin
+                (##string-set!
+                 result
+                 i
+                 (##integer->char
+                  (##u8vector-ref u8vect (##fx+ start i))))
+                (loop1 (##fx+ i 1)))
+              result))
+        (let loop2 ((i start)
+                    (j 0))
+          (if (##fx< i end)
+              (if (##fx< j len) ;; account for u8vect mutation by other thread
+                  (let ((b0 (##u8vector-ref u8vect i)))
+                    (cond ((##fx< b0 #x80)
+                           ;; 1 byte encoding (ASCII)
+                           (##string-set!
+                            result
+                            j
+                            (##integer->char b0))
+                           (loop2 (##fx+ i 1)
+                                  (##fx+ j 1)))
+                          ((##fx< b0 #xc2)
+                           (invalid-utf8))
+                          ((##fx< b0 #xe0)
+                           ;; 2 byte encoding
+                           (let* ((b1 (##u8vector-ref
+                                       u8vect
+                                       (##fx+ i 1)))
+                                  (n (##fx+
+                                      (##fxarithmetic-shift-left
+                                       (##fxand b0 #x1f)
+                                       6)
+                                      (##fxand b1 #x3f))))
+                             (if (and (##fx= (##fxand b1 #xc0)
+                                             #x80)
+                                      (##fx>= n #x80))
+                                 (begin
+                                   (##string-set!
+                                    result
+                                    j
+                                    (##integer->char n))
+                                   (loop2 (##fx+ i 2)
+                                          (##fx+ j 1)))
+                                 (invalid-utf8))))
+                          ((##fx< b0 #xf0)
+                           ;; 3 byte encoding
+                           (let* ((b1 (##u8vector-ref
+                                       u8vect
+                                       (##fx+ i 1)))
+                                  (b2 (##u8vector-ref
+                                       u8vect
+                                       (##fx+ i 2)))
+                                  (n (##fx+
+                                      (##fxarithmetic-shift-left
+                                       (##fxand b0 #x0f)
+                                       12)
+                                      (##fxarithmetic-shift-left
+                                       (##fxand b1 #x3f)
+                                       6)
+                                      (##fxand b2 #x3f))))
+                             (if (and (##fx= (##fxand (##fxior b1
+                                                               b2)
+                                                      #xc0)
+                                             #x80)
+                                      (##fx>= n #x800)
+                                      (##not
+                                       (and (##fx>= n #xd800)
+                                            (##fx<= n #xdfff))))
+                                 (begin
+                                   (##string-set!
+                                    result
+                                    j
+                                    (##integer->char n))
+                                   (loop2 (##fx+ i 3)
+                                          (##fx+ j 1)))
+                                 (invalid-utf8))))
+                          ((##fx< b0 #xf5)
+                           ;; 4 byte encoding
+                           (let* ((b1 (##u8vector-ref
+                                       u8vect
+                                       (##fx+ i 1)))
+                                  (b2 (##u8vector-ref
+                                       u8vect
+                                       (##fx+ i 2)))
+                                  (b3 (##u8vector-ref
+                                       u8vect
+                                       (##fx+ i 3)))
+                                  (n (##fx+
+                                      (##fxarithmetic-shift-left
+                                       (##fxand b0 #x07)
+                                       18)
+                                      (##fxarithmetic-shift-left
+                                       (##fxand b1 #x3f)
+                                       12)
+                                      (##fxarithmetic-shift-left
+                                       (##fxand b2 #x3f)
+                                       6)
+                                      (##fxand b3 #x3f))))
+                             (if (and (##fx= (##fxand (##fxior b1
+                                                               b2
+                                                               b3)
+                                                      #xc0)
+                                             #x80)
+                                      (##fx>= n #x10000)
+                                      (##fx<= n #x10ffff))
+                                 (begin
+                                   (##string-set!
+                                    result
+                                    j
+                                    (##integer->char n))
+                                   (loop2 (##fx+ i 4)
+                                          (##fx+ j 1)))
+                                 (invalid-utf8))))
+                          (else
+                           (invalid-utf8))))
+                  (invalid-utf8))
+              (if (or (##fx> i end)
+                      (##fx< j len))
+                  (invalid-utf8)
+                  result))))))
+
+(define-prim (utf8->string
+              u8vect
+              #!optional
+              (start (macro-absent-obj))
+              (end (macro-absent-obj)))
+  (macro-force-vars (u8vect start end)
+    (macro-check-u8vector
+      u8vect
+      1
+      (utf8->string u8vect start end)
+      (if (##eq? start (macro-absent-obj))
+          (##utf8->string u8vect)
+          (macro-check-index-range-incl
+            start
+            2
+            0
+            (##u8vector-length u8vect)
+            (utf8->string u8vect start end)
+            (if (##eq? end (macro-absent-obj))
+                (##utf8->string u8vect start)
+                (macro-check-index-range-incl
+                  end
+                  3
+                  start
+                  (##u8vector-length u8vect)
+                  (utf8->string u8vect start end)
+                  (##utf8->string u8vect start end))))))))
+
 ;;;----------------------------------------------------------------------------
 
 ;; IEEE Scheme procedures:
@@ -184,6 +574,8 @@
 (define-prim (not obj)
   (macro-force-vars (obj)
     (##not obj)))
+
+(define-fail-check-type boolean 'boolean)
 
 (define-prim (##boolean? obj)
   (or (##eq? obj #t) (##eq? obj #f)))
@@ -447,6 +839,39 @@
                 (loop (##cdr x) (##fx- i 1))
                 (##car x))))))))
 
+(define-prim (list-set! lst k val)
+  (macro-force-vars (k)
+    (macro-check-index k 2 (list-set! lst k val)
+      (let loop ((x lst) (i k))
+        (macro-force-vars (x)
+          (macro-check-pair x 1 (list-set! lst k val)
+            (if (##fx< 0 i)
+                (loop (##cdr x) (##fx- i 1))
+                (macro-check-mutable x 1 (list-set! lst k val)
+                  (begin
+                    (##set-car! x val)
+                    (##void))))))))))
+
+(define-prim (list-set lst k val)
+  (macro-force-vars (k)
+    (macro-check-index k 2 (list-set lst k val)
+
+      (let ()
+
+        (define (set x i)
+          (macro-force-vars (x)
+            (if (##pair? x)
+                (if (##fx< 0 i)
+                    (let ((r (set (##cdr x) (##fx- i 1))))
+                      (if (##pair? r)
+                          (##cons (##car x) r)
+                          r))
+                    (##cons val (##cdr x)))
+                #f)))
+
+        (or (set lst k)
+            (##fail-check-pair 1 list-set lst k val))))))
+
 (define-prim (##memq obj lst)
   (let loop ((x lst))
     (if (##pair? x)
@@ -491,16 +916,19 @@
             (loop (##cdr x)))
         #f)))
 
-(define-prim (member obj lst)
-  (let loop ((x lst))
-    (macro-force-vars (x)
-      (if (##pair? x)
-          (let ((y (##car x)))
-            (if (##equal? obj y)
-                x
-                (loop (##cdr x))))
-          (macro-check-list x 2 (member obj lst)
-            #f)))))
+(define-prim (member obj lst #!optional (c (macro-absent-obj)))
+  (macro-force-vars (c)
+    (let ((compare (if (##eq? c (macro-absent-obj)) ##equal? c)))
+      (macro-check-procedure compare 3 (member obj lst c)
+        (let loop ((x lst))
+          (macro-force-vars (x)
+            (if (##pair? x)
+                (let ((y (##car x)))
+                  (if (compare obj y)
+                      x
+                      (loop (##cdr x))))
+                (macro-check-list x 2 (member obj lst c)
+                  #f))))))))
 
 (define-prim (assq obj lst)
   (macro-force-vars (obj)
@@ -545,19 +973,22 @@
               (loop (##cdr x))))
         #f)))
 
-(define-prim (assoc obj lst)
-  (let loop ((x lst))
-    (macro-force-vars (x)
-      (if (##pair? x)
-          (let ((couple (##car x)))
-            (macro-force-vars (couple)
-              (macro-check-pair-list couple 2 (assoc obj lst)
-                (let ((y (##car couple)))
-                  (if (##equal? obj y)
-                      couple
-                      (loop (##cdr x)))))))
-          (macro-check-list x 2 (assoc obj lst)
-            #f)))))
+(define-prim (assoc obj lst #!optional (c (macro-absent-obj)))
+  (macro-force-vars (c)
+    (let ((compare (if (##eq? c (macro-absent-obj)) ##equal? c)))
+      (macro-check-procedure compare 3 (assoc obj lst c)
+        (let loop ((x lst))
+          (macro-force-vars (x)
+            (if (##pair? x)
+                (let ((couple (##car x)))
+                  (macro-force-vars (couple)
+                    (macro-check-pair-list couple 2 (assoc obj lst c)
+                      (let ((y (##car couple)))
+                        (if (compare obj y)
+                            couple
+                            (loop (##cdr x)))))))
+                (macro-check-list x 2 (assoc obj lst c)
+                  #f))))))))
 
 (define-fail-check-type symbol 'symbol)
 
@@ -640,8 +1071,15 @@
 
 ;; Number related procedures are in "_num.scm"
 
+;; define Unicode related macros
+
+(##include "_unicode#.scm")
+
+(macro-implement-unicode-tables)
+
 (define-fail-check-type char 'char)
 (define-fail-check-type char-list 'char-list)
+(define-fail-check-type char-vector 'char-vector)
 
 (define-prim (##char? obj))
 
@@ -719,85 +1157,84 @@
   macro-force-vars
   macro-check-char)
 
-(##define-macro (case-independent-char=? x y)
-  `(##char=? (##char-downcase ,x) (##char-downcase ,y)))
+(##define-macro (macro-char-ci=? x y)
+  `(##char=? (##char-foldcase ,x) (##char-foldcase ,y)))
 
-(##define-macro (case-independent-char<? x y)
-  `(##char<? (##char-downcase ,x) (##char-downcase ,y)))
+(##define-macro (macro-char-ci<? x y)
+  `(##char<? (##char-foldcase ,x) (##char-foldcase ,y)))
 
 (define-prim-nary-bool (##char-ci=? x y)
   #t
   #t
-  (case-independent-char=? x y)
+  (macro-char-ci=? x y)
   macro-no-force
   macro-no-check)
 
 (define-prim-nary-bool (char-ci=? x y)
   #t
   #t
-  (case-independent-char=? x y)
+  (macro-char-ci=? x y)
   macro-force-vars
   macro-check-char)
 
 (define-prim-nary-bool (##char-ci<? x y)
   #t
   #t
-  (case-independent-char<? x y)
+  (macro-char-ci<? x y)
   macro-no-force
   macro-no-check)
 
 (define-prim-nary-bool (char-ci<? x y)
   #t
   #t
-  (case-independent-char<? x y)
+  (macro-char-ci<? x y)
   macro-force-vars
   macro-check-char)
 
 (define-prim-nary-bool (##char-ci>? x y)
   #t
   #t
-  (case-independent-char<? y x)
+  (macro-char-ci<? y x)
   macro-no-force
   macro-no-check)
 
 (define-prim-nary-bool (char-ci>? x y)
   #t
   #t
-  (case-independent-char<? y x)
+  (macro-char-ci<? y x)
   macro-force-vars
   macro-check-char)
 
 (define-prim-nary-bool (##char-ci<=? x y)
   #t
   #t
-  (##not (case-independent-char<? y x))
+  (##not (macro-char-ci<? y x))
   macro-no-force
   macro-no-check)
 
 (define-prim-nary-bool (char-ci<=? x y)
   #t
   #t
-  (##not (case-independent-char<? y x))
+  (##not (macro-char-ci<? y x))
   macro-force-vars
   macro-check-char)
 
 (define-prim-nary-bool (##char-ci>=? x y)
   #t
   #t
-  (##not (case-independent-char<? x y))
+  (##not (macro-char-ci<? x y))
   macro-no-force
   macro-no-check)
 
 (define-prim-nary-bool (char-ci>=? x y)
   #t
   #t
-  (##not (case-independent-char<? x y))
+  (##not (macro-char-ci<? x y))
   macro-force-vars
   macro-check-char)
 
 (define-prim (##char-alphabetic? c)
-  (or (and (##char<=? #\A c) (##char<=? c #\Z))
-      (and (##char<=? #\a c) (##char<=? c #\z))))
+  (macro-char-alphabetic? c))
 
 (define-prim (char-alphabetic? c)
   (macro-force-vars (c)
@@ -805,7 +1242,7 @@
       (##char-alphabetic? c))))
 
 (define-prim (##char-numeric? c)
-  (and (##char<=? #\0 c) (##char<=? c #\9)))
+  (macro-char-numeric? c))
 
 (define-prim (char-numeric? c)
   (macro-force-vars (c)
@@ -813,9 +1250,7 @@
       (##char-numeric? c))))
 
 (define-prim (##char-whitespace? c)
-  (or (and (##char<=? #\tab c)
-	   (##char<=? c #\return))
-      (##char=? c #\space)))
+  (macro-char-whitespace? c))
 
 (define-prim (char-whitespace? c)
   (macro-force-vars (c)
@@ -823,7 +1258,7 @@
       (##char-whitespace? c))))
 
 (define-prim (##char-upper-case? c)
-  (and (##char<=? #\A c) (##char<=? c #\Z)))
+  (macro-char-upper-case? c))
 
 (define-prim (char-upper-case? c)
   (macro-force-vars (c)
@@ -831,7 +1266,7 @@
       (##char-upper-case? c))))
 
 (define-prim (##char-lower-case? c)
-  (and (##char<=? #\a c) (##char<=? c #\z)))
+  (macro-char-lower-case? c))
 
 (define-prim (char-lower-case? c)
   (macro-force-vars (c)
@@ -852,9 +1287,7 @@
           (##raise-range-exception 1 integer->char n)))))
 
 (define-prim (##char-upcase c)
-  (if (and (##char<=? #\a c) (##char<=? c #\z))
-      (##integer->char (##fx- (##char->integer c) 32))
-      c))
+  (macro-char-upcase c))
 
 (define-prim (char-upcase c)
   (macro-force-vars (c)
@@ -862,14 +1295,28 @@
       (##char-upcase c))))
 
 (define-prim (##char-downcase c)
-  (if (and (##char<=? #\A c) (##char<=? c #\Z))
-      (##integer->char (##fx+ (##char->integer c) 32))
-      c))
+  (macro-char-downcase c))
 
 (define-prim (char-downcase c)
   (macro-force-vars (c)
     (macro-check-char c 1 (char-downcase c)
       (##char-downcase c))))
+
+(define-prim (##char-foldcase c)
+  (macro-char-foldcase c))
+
+(define-prim (char-foldcase c)
+  (macro-force-vars (c)
+    (macro-check-char c 1 (char-foldcase c)
+      (##char-foldcase c))))
+
+(define-prim (##digit-value c)
+  (macro-digit-value c))
+
+(define-prim (digit-value c)
+  (macro-force-vars (c)
+    (macro-check-char c 1 (digit-value c)
+      (##digit-value c))))
 
 (define-prim (##string=? str1 str2)
   (##string-equal? str1 str2))
@@ -923,19 +1370,17 @@
   macro-force-vars
   macro-check-string)
 
+(define-prim (##string-cmp-ci str1 str2)
+  (macro-string-cmp-ci str1
+                       str2
+                       0
+                       (##string-length str1)
+                       0
+                       (##string-length str2)))
+
 (define-prim (##string-ci=? str1 str2)
   (or (##eq? str1 str2)
-      (let ((len1 (##string-length str1)))
-        (if (##eq? len1 (##string-length str2))
-            (let loop ((i (##fx- len1 1)))
-              (cond ((##fx< i 0)
-                     #t)
-                    ((##char=? (##char-downcase (##string-ref str1 i))
-                               (##char-downcase (##string-ref str2 i)))
-                     (loop (##fx- i 1)))
-                    (else
-                     #f)))
-            #f))))
+      (##fx= (##string-cmp-ci str1 str2) 0)))
 
 (define-prim-nary-bool (string-ci=? str1 str2)
   #t
@@ -946,17 +1391,7 @@
 
 (define-prim (##string-ci<? str1 str2)
   (and (##not (##eq? str1 str2))
-       (let ((len1 (##string-length str1))
-             (len2 (##string-length str2)))
-         (let ((n (##fxmin len1 len2)))
-           (let loop ((i 0))
-             (if (##fx< i n)
-                 (let ((c1 (##char-downcase (##string-ref str1 i)))
-                       (c2 (##char-downcase (##string-ref str2 i))))
-                   (if (##char=? c1 c2)
-                       (loop (##fx+ i 1))
-                       (##char<? c1 c2)))
-                 (##fx< n len2)))))))
+       (##fx< (##string-cmp-ci str1 str2) 0)))
 
 (define-prim-nary-bool (string-ci<? str1 str2)
   #t
@@ -985,6 +1420,17 @@
   (##not (##string-ci<? str1 str2))
   macro-force-vars
   macro-check-string)
+
+(define-prim (##string-foldcase str)
+  (macro-string-foldcase str 0 (##string-length str)))
+
+(define-prim (string-foldcase str)
+  (macro-force-vars (str)
+    (macro-check-string
+      str
+      1
+      (string-foldcase str)
+      (##string-foldcase str))))
 
 (define-prim (##copy-string-list lst)
 
@@ -1018,6 +1464,77 @@
 
 ;; apply is in "_kernel.scm"
 
+(define ##allow-length-mismatch? #t)
+
+(define-prim (##allow-length-mismatch?-set! x)
+  (set! ##allow-length-mismatch? x))
+
+(define (##proper-list-length lst)
+  (let loop ((lst lst) (n 0))
+    (macro-force-vars (lst)
+      (cond ((##pair? lst)
+             (loop (##cdr lst) (##fx+ n 1)))
+            ((##null? lst)
+             n)
+            (else
+             #f)))))
+
+(define (##cars lsts end)
+
+  (define (cars lsts end) ;; assumes lsts is a list of pairs
+    (if (##pair? lsts)
+        (let ((lst1 (##car lsts)))
+          (macro-force-vars (lst1)
+            (##cons (##car lst1)
+                    (cars (##cdr lsts) end))))
+        end))
+
+  (cars lsts end))
+
+(define (##cdrs lsts)
+
+  (define (cdrs lsts)
+    (if (##pair? lsts)
+        (let ((tail (cdrs (##cdr lsts))))
+
+          ;; tail is either
+          ;; 1) () : (##cdr lsts) is ()
+          ;; 2) #f : all the elements of (##cdr lsts) are not pairs
+          ;; 3) a pair : all the elements of (##cdr lsts) are pairs
+          ;; 4) a fixnum >= 0 : at least one of (##cdr lsts) is ()
+          ;;                    and at index tail of (##cdr lsts) is a pair
+          ;; 5) a fixnum < 0 : at least one of (##cdr lsts) is not a pair and
+          ;;                   at index tail - ##min-fixnum of (##cdr lsts) is
+          ;;                   the first element that is neither a pair or ()
+
+          (let ((lst1 (##car lsts)))
+            (macro-force-vars (lst1)
+              (cond ((##pair? lst1)
+                     (cond ((##fixnum? tail)
+                            (if (##fx< tail 0)
+                                (##fx+ tail 1)
+                                0))
+                           ((##not tail)
+                            (if ##allow-length-mismatch?
+                                #f
+                                0))
+                           (else
+                            (##cons (##cdr lst1) tail))))
+                    ((##null? lst1)
+                     (cond ((##fixnum? tail)
+                            (##fx+ tail 1))
+                           ((##pair? tail)
+                            (if ##allow-length-mismatch?
+                                #f
+                                1))
+                           (else
+                            #f)))
+                    (else
+                     ##min-fixnum)))))
+        '()))
+
+  (cdrs lsts))
+
 (define-prim (##map proc lst)
   (let loop ((x lst))
     (if (##pair? x)
@@ -1029,84 +1546,69 @@
     (macro-check-procedure proc 1 (map proc x . y)
       (let ()
 
-        (define (proper-list-length lst)
-          (let loop ((lst lst) (n 0))
-            (macro-force-vars (lst)
-              (cond ((##pair? lst)
-                     (loop (##cdr lst) (##fx+ n 1)))
-                    ((##null? lst)
-                     n)
-                    (else
-                     #f)))))
+        (define (map-1 x)
 
-        (define (map-1 lst1)
-          (macro-force-vars (lst1)
-            (if (##pair? lst1)
-                (let ((result (proc (##car lst1))))
-                  (##cons result (map-1 (##cdr lst1))))
-                '())))
+          (define (map-1 lst1)
+            (macro-force-vars (lst1)
+              (if (##pair? lst1)
+                  (let* ((result (proc (##car lst1)))
+                         (tail (map-1 (##cdr lst1))))
+                    (macro-if-checks
+                     (and tail
+                          (##cons result tail))
+                     (##cons result tail)))
+                  (macro-if-checks
+                   (if (##null? lst1)
+                       '()
+                       #f)
+                   '()))))
 
-        (define (cars lsts)
-          (if (##pair? lsts)
-              (let ((lst1 (##car lsts)))
-                (macro-force-vars (lst1)
-                  (let ((head (##car lst1)))
-                    (let ((tail (cars (##cdr lsts))))
-                      (##cons head tail)))))
-              '()))
+          (macro-if-checks
+           (let ((result (map-1 x)))
+             (or result
+                 (macro-fail-check-list
+                  2
+                  (map proc x))))
+           (map-1 x)))
 
-        (define (cdrs lsts)
-          (if (##pair? lsts)
-              (let ((lst1 (##car lsts)))
-                (macro-force-vars (lst1)
-                  (let ((head (##cdr lst1)))
-                    (if (##pair? head)
-                        (let ((tail (cdrs (##cdr lsts))))
-                          (and tail
-                               (##cons head tail)))
-                        #f))))
-              '()))
+        (define (map-n x-y)
 
-        (define (map-n lsts)
-          (if lsts
-              (let ((result (##apply proc (cars lsts))))
-                (##cons result (map-n (cdrs lsts))))
-              '()))
+          (define (map-n lsts)
+            (let ((rests (##cdrs lsts)))
+              (if (##not rests)
+                  '()
+                  (if (##pair? rests)
+                      (let* ((args (##cars lsts '()))
+                             (result (##apply proc args))
+                             (tail (map-n rests)))
+                        (macro-if-checks
+                         (if (##fixnum? tail)
+                             tail
+                             (##cons result tail))
+                         (##cons result tail)))
+                      (macro-if-checks
+                       rests
+                       '())))))
 
-        (cond ((##null? y)
-               (macro-if-checks
-                (let ((len1 (proper-list-length x)))
-                  (if len1
-                      (map-1 x)
-                      (macro-fail-check-list 2 (map proc x . y))))
-                (map-1 x)))
-              (else
-               (macro-if-checks
-                (let ((len1 (proper-list-length x)))
-                  (if len1
-                      (let loop ((lsts y) (arg-num 3))
-                        (if (##null? lsts)
-                            (if (##null? x)
-                                '()
-                                (map-n (##cons x y)))
-                            (let ((len2 (proper-list-length (##car lsts))))
-                              (if (##eq? len1 len2)
-                                  (loop (##cdr lsts) (##fx+ arg-num 1))
-                                  (if len2
-                                      (##raise-improper-length-list-exception
-                                       arg-num
-                                       '()
-                                       map
-                                       proc
-                                       x
-                                       y)
-                                      (macro-fail-check-list
-                                       arg-num
-                                       (map proc x . y)))))))
-                      (macro-fail-check-list 2 (map proc x . y))))
-                (if (##null? x)
-                    '()
-                    (map-n (##cons x y))))))))))
+          (macro-if-checks
+           (let ((result (map-n x-y)))
+             (if (##fixnum? result)
+                 (if (##fx< result 0)
+                     (macro-fail-check-list
+                      (##fx- (##fx+ 2 result) ##min-fixnum)
+                      (map proc . x-y))
+                     (##raise-length-mismatch-exception
+                      (##fx+ 2 result)
+                      '()
+                      map
+                      proc
+                      x-y))
+                 result))
+           (map-n x-y)))
+
+        (if (##null? y)
+            (map-1 x)
+            (map-n (##cons x y)))))))
 
 (define-prim (##for-each proc lst)
   (let loop ((x lst))
@@ -1121,86 +1623,47 @@
     (macro-check-procedure proc 1 (for-each proc x . y)
       (let ()
 
-        (define (proper-list-length lst)
-          (let loop ((lst lst) (n 0))
-            (macro-force-vars (lst)
-              (cond ((##pair? lst)
-                     (loop (##cdr lst) (##fx+ n 1)))
-                    ((##null? lst)
-                     n)
-                    (else
-                     #f)))))
+        (define (for-each-1 x)
 
-        (define (for-each-1 lst1)
-          (macro-force-vars (lst1)
-            (if (##pair? lst1)
-                (let ((result (proc (##car lst1))))
-                  (for-each-1 (##cdr lst1)))
-                (##void))))
+          (define (for-each-1 lst1)
+            (macro-force-vars (lst1)
+              (if (##pair? lst1)
+                  (begin
+                    (proc (##car lst1))
+                    (for-each-1 (##cdr lst1)))
+                  (macro-check-list lst1 2 (for-each proc x)
+                    (##void)))))
 
-        (define (cars lsts)
-          (if (##pair? lsts)
-              (let ((lst1 (##car lsts)))
-                (macro-force-vars (lst1)
-                  (let ((head (##car lst1)))
-                    (let ((tail (cars (##cdr lsts))))
-                      (##cons head tail)))))
-              '()))
+          (for-each-1 x))
 
-        (define (cdrs lsts)
-          (if (##pair? lsts)
-              (let ((lst1 (##car lsts)))
-                (macro-force-vars (lst1)
-                  (let ((head (##cdr lst1)))
-                    (if (##pair? head)
-                        (let ((tail (cdrs (##cdr lsts))))
-                          (and tail
-                               (##cons head tail)))
-                        #f))))
-              '()))
+        (define (for-each-n x-y)
 
-        (define (for-each-n lsts)
-          (let ((tails (cdrs lsts)))
-            (if tails
-                (begin
-                  (##apply proc (cars lsts))
-                  (for-each-n tails))
-                (##apply proc (cars lsts)))))
+          (define (for-each-n lsts)
+            (let ((rests (##cdrs lsts)))
+              (if (##not rests)
+                  (##void)
+                  (if (##pair? rests)
+                      (begin
+                        (##apply proc (##cars lsts '()))
+                        (for-each-n rests))
+                      (macro-if-checks
+                       (if (##fx< rests 0)
+                           (macro-fail-check-list
+                            (##fx- (##fx+ 2 rests) ##min-fixnum)
+                            (for-each proc . x-y))
+                           (##raise-length-mismatch-exception
+                            (##fx+ 2 rests)
+                            '()
+                            for-each
+                            proc
+                            x-y))
+                       (##void))))))
 
-        (cond ((##null? y)
-               (macro-if-checks
-                (let ((len1 (proper-list-length x)))
-                  (if len1
-                      (for-each-1 x)
-                      (macro-fail-check-list 2 (for-each proc x . y))))
-                (for-each-1 x)))
-              (else
-               (macro-if-checks
-                (let ((len1 (proper-list-length x)))
-                  (if len1
-                      (let loop ((lsts y) (arg-num 3))
-                        (if (##null? lsts)
-                            (if (##pair? x)
-                                (for-each-n (##cons x y))
-                                (##void))
-                            (let ((len2 (proper-list-length (##car lsts))))
-                              (if (##eq? len1 len2)
-                                  (loop (##cdr lsts) (##fx+ arg-num 1))
-                                  (if len2
-                                      (##raise-improper-length-list-exception
-                                       arg-num
-                                       '()
-                                       for-each
-                                       proc
-                                       x
-                                       y)
-                                      (macro-fail-check-list
-                                       arg-num
-                                       (for-each proc x . y)))))))
-                      (macro-fail-check-list 2 (for-each proc x . y))))
-                (if (##pair? x)
-                    (for-each-n (##cons x y))
-                    (##void)))))))))
+          (for-each-n x-y))
+
+        (if (##null? y)
+            (for-each-1 x)
+            (for-each-n (##cons x y)))))))
 
 ;; call-with-current-continuation is in "_kernel.scm"
 
@@ -1220,25 +1683,23 @@
                 (loop (##cdr x) (##fx- i 1))))
             x)))))
 
-(define-prim (##make-promise thunk))
-(define-prim (##promise-thunk promise))
-(define-prim (##promise-thunk-set! promise thunk))
-(define-prim (##promise-result promise))
-(define-prim (##promise-result-set! promise result))
+(define-prim (##make-delay-promise thunk))
+(define-prim (##promise-state promise))
+(define-prim (##promise-state-set! promise state))
+
+(define-prim (promise? obj)
+  (##promise? obj))
+
+(define-prim (make-promise val)
+  (if (##promise? val)
+      val
+      (let ((p (##make-delay-promise #f)))
+        (##vector-set! (##promise-state p) 0 val)
+        p)))
 
 (define-prim (##force obj)
   (if (##promise? obj)
-      (let ((result (##promise-result obj)))
-        (if (##eq? result obj)
-            (let* ((r (##force ((##promise-thunk obj))))
-                   (result2 (##promise-result obj)))
-              (if (##eq? result2 obj)
-                  (begin
-                    (##promise-result-set! obj r)
-                    (##promise-thunk-set! obj #f)
-                    r)
-                  result2))
-            result))
+      (##force-out-of-line obj)
       obj))
 
 (define-prim (force obj)
@@ -1381,5 +1842,303 @@
                (##fx+
                 (bit 13)
                 (bit 14))))))))))))))))
+
+;;;----------------------------------------------------------------------------
+
+;; SRFI-1 procedures:
+
+(define-prim (xcons d a)
+  (##cons a d))
+
+(define-prim (cons* x . rest)
+  (if (##pair? rest)
+      (let loop ((x x) (probe rest))
+        (let ((y (##car probe))
+              (tail (##cdr probe)))
+          (##set-car! probe x)
+          (if (##pair? tail)
+              (loop y tail)
+              (begin
+                (##set-cdr! probe y)
+                rest))))
+      x))
+
+(define-prim (##make-list n #!optional (fill 0))
+  (let loop ((i n) (result '()))
+    (if (##fx> i 0)
+        (loop (##fx- i 1) (##cons fill result))
+        result)))
+
+(define-prim (make-list n #!optional (fill (macro-absent-obj)))
+  (macro-force-vars (n fill)
+    (macro-check-index n 1 (make-list n fill)
+      (if (##eq? fill (macro-absent-obj))
+          (##make-list n)
+          (##make-list n fill)))))
+
+(define-prim (list-tabulate n init-proc)
+  (macro-force-vars (n init-proc)
+    (macro-check-index n 1 (list-tabulate n init-proc)
+      (macro-check-procedure init-proc 2 (list-tabulate n init-proc)
+        (let loop ((i n) (result '()))
+          (if (##fx> i 0)
+              (let ((i (##fx- i 1)))
+                (loop i (##cons (init-proc i) result)))
+              result))))))
+
+(define-prim (list-copy lst)
+
+  (define (copy lst)
+    (macro-force-vars (lst)
+      (if (##pair? lst)
+          (##cons (##car lst) (copy (##cdr lst)))
+          lst)))
+
+  (copy lst))
+
+(define-prim (circular-list x . rest)
+  (let ((result (##cons x rest)))
+    (##set-cdr! (##last-pair result) result)
+    result))
+
+(define-prim (##iota count #!optional (start 0) (step 1))
+  (if (and (##eqv? step 1)
+           (##fixnum? start)
+           (##fx+? (##fx- count 1) start))
+
+      (let loop ((i count) (result '()))
+        (if (##fx> i 0)
+            (let ((i (##fx- i 1)))
+              (loop i (##cons (##fx+ start i) result)))
+            result))
+
+      (let loop ((i count) (result '()))
+        (if (##fx> i 0)
+            (let ((i (##fx- i 1)))
+              (loop i (##cons (##+ start (##* step i)) result)))
+            result))))
+
+(define-prim (iota count
+                   #!optional
+                   (start (macro-absent-obj))
+                   (step (macro-absent-obj)))
+  (macro-force-vars (count start step)
+    (macro-check-index count 1 (iota count start step)
+      (if (##eq? start (macro-absent-obj))
+          (##iota count 0 1)
+          (if (##not (##number? start))
+              (##fail-check-number 2 iota count start step)
+              (if (##eq? step (macro-absent-obj))
+                  (##iota count start 1)
+                  (if (##not (##number? step))
+                      (##fail-check-number 3 iota count start step)
+                      (##iota count start step))))))))
+
+(define-prim (take x i)
+  (macro-force-vars (i)
+    (macro-check-index i 2 (take x i)
+      (let loop ((probe x)
+                 (j i)
+                 (rev-result '()))
+        (if (##fx> j 0)
+            (macro-force-vars (probe)
+              (macro-check-pair probe 1 (take x i)
+                (loop (##cdr probe)
+                      (##fx- j 1)
+                      (##cons (##car probe) rev-result))))
+            (##reverse! rev-result))))))
+
+(define-prim (drop x i)
+  (macro-force-vars (i)
+    (macro-check-index i 2 (drop x i)
+      (let loop ((probe x)
+                 (j i))
+        (if (##fx> j 0)
+            (macro-force-vars (probe)
+              (macro-check-pair probe 1 (drop x i)
+                (loop (##cdr probe)
+                      (##fx- j 1))))
+            probe)))))
+
+(define-prim (##last-pair lst)
+  (let loop ((lst lst))
+    (let ((tail (##cdr lst)))
+      (if (##pair? tail)
+          (loop tail)
+          lst))))
+
+(define-prim (last-pair lst)
+  (macro-force-vars (lst)
+    (macro-check-pair lst 1 (last-pair lst)
+      (let loop ((lst lst))
+        (let ((tail (##cdr lst)))
+          (macro-force-vars (tail)
+            (if (##pair? tail)
+                (loop tail)
+                lst)))))))
+
+(define-prim (##last lst)
+  (##car (##last-pair lst)))
+
+(define-prim (last lst)
+  (macro-force-vars (lst)
+    (macro-check-pair lst 1 (last lst)
+      (let loop ((lst lst))
+        (let ((tail (##cdr lst)))
+          (macro-force-vars (tail)
+            (if (##pair? tail)
+                (loop tail)
+                (##car lst))))))))
+
+(define-prim (##reverse! lst)
+  (let loop ((prev '()) (curr lst))
+    (if (##pair? curr)
+        (let ((next (##cdr curr)))
+          (##set-cdr! curr prev)
+          (loop curr next))
+        prev)))
+
+(define-prim (reverse! lst)
+  (let loop ((prev '()) (curr lst))
+    (macro-force-vars (curr)
+      (if (##pair? curr)
+          (let ((next (##cdr curr)))
+            (##set-cdr! curr prev)
+            (loop curr next))
+          (macro-check-list curr 1 (reverse! lst)
+            prev)))))
+
+(define-prim (##fold proc base lst)
+  (let loop ((r base) (x lst))
+    (if (##pair? x)
+        (loop (proc (##car x) r)
+              (##cdr x))
+        r)))
+
+(define-prim (fold proc base x . y)
+  (macro-force-vars (proc)
+    (macro-check-procedure proc 1 (fold proc base x . y)
+      (let ()
+
+        (define (fold-1 x)
+
+          (define (fold-1 r lst1)
+            (macro-force-vars (lst1)
+              (if (##pair? lst1)
+                  (fold-1 (proc (##car lst1) r)
+                          (##cdr lst1))
+                  (macro-check-list lst1 3 (fold proc base x)
+                    r))))
+
+          (fold-1 base x))
+
+        (define (fold-n x-y)
+
+          (define (fold-n r lsts)
+            (let ((rests (##cdrs lsts)))
+              (if (##not rests)
+                  r
+                  (if (##pair? rests)
+                      (fold-n (##apply proc (##cars lsts (##list r)))
+                              rests)
+                      (macro-if-checks
+                       (if (##fx< rests 0)
+                           (macro-fail-check-list
+                            (##fx- (##fx+ 3 rests) ##min-fixnum)
+                            (fold proc base . x-y))
+                           (##raise-length-mismatch-exception
+                            (##fx+ 3 rests)
+                            '()
+                            fold
+                            proc
+                            base
+                            x-y))
+                       r)))))
+
+          (fold-n base x-y))
+
+        (if (##null? y)
+            (fold-1 x)
+            (fold-n (##cons x y)))))))
+
+(define-prim (##fold-right proc base lst)
+
+  (define (fold-right x)
+    (if (##pair? x)
+        (proc (##car x)
+              (fold-right (##cdr x)))
+        base))
+
+  (fold-right lst))
+
+(define-prim (fold-right proc base x . y)
+  (macro-force-vars (proc)
+    (macro-check-procedure proc 1 (fold-right proc base x . y)
+      (let ()
+
+        (define (fold-right-1 x)
+
+          (define (fold-right-1 lst1)
+            (macro-force-vars (lst1)
+              (if (##pair? lst1)
+                  (let ((tail (fold-right-1 (##cdr lst1))))
+                    (macro-if-checks
+                     (and tail
+                          (##list (proc (##car lst1) (##car tail))))
+                     (proc (##car lst1) tail)))
+                  (macro-if-checks
+                   (if (##null? lst1)
+                       (##list base)
+                       #f)
+                   (##list base)))))
+
+          (macro-if-checks
+           (let ((result (fold-right-1 x)))
+             (if result
+                 (##car result)
+                 (macro-fail-check-list
+                  3
+                  (fold-right proc base x))))
+           (fold-right-1 x)))
+
+        (define (fold-right-n x-y)
+
+          (define (fold-right-n lsts)
+            (let ((rests (##cdrs lsts)))
+              (if (##not rests)
+                  (macro-if-checks
+                   (##list base)
+                   base)
+                  (if (##pair? rests)
+                      (let ((tail (fold-right-n rests)))
+                        (macro-if-checks
+                         (if (##fixnum? tail)
+                             tail
+                             (##list (##apply proc (##cars lsts tail))))
+                         (##apply proc (##cars lsts (##list tail)))))
+                      (macro-if-checks
+                       rests
+                       base)))))
+
+          (macro-if-checks
+           (let ((result (fold-right-n x-y)))
+             (if (##fixnum? result)
+                 (if (##fx< result 0)
+                     (macro-fail-check-list
+                      (##fx- (##fx+ 3 result) ##min-fixnum)
+                      (fold-right proc base . x-y))
+                     (##raise-length-mismatch-exception
+                      (##fx+ 3 result)
+                      '()
+                      fold-right
+                      proc
+                      base
+                      x-y))
+                 (##car result)))
+           (fold-right-n x-y)))
+
+        (if (##null? y)
+            (fold-right-1 x)
+            (fold-right-n (##cons x y)))))))
 
 ;;;============================================================================
